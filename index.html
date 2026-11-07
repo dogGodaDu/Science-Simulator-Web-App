@@ -1,0 +1,3025 @@
+<!DOCTYPE html>
+<html lang="en" class="dark">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>SciTown 3D — Infinite Science & Engineering Multiplayer Sim</title>
+    <!-- Tailwind CSS -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    <!-- Three.js r128 -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+    <!-- Font Awesome Icons -->
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+    <!-- Google Fonts -->
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&family=JetBrains+Mono:wght@400;500;700&display=swap" rel="stylesheet">
+
+    <style>
+        * {
+            user-select: none;
+            -webkit-user-select: none;
+            box-sizing: border-box;
+        }
+        body, html {
+            margin: 0;
+            padding: 0;
+            width: 100%;
+            height: 100%;
+            overflow: hidden;
+            font-family: 'Inter', sans-serif;
+            background-color: #090d16;
+            color: #f1f5f9;
+        }
+        .font-mono {
+            font-family: 'JetBrains Mono', monospace;
+        }
+        #game-canvas {
+            position: absolute;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            z-index: 1;
+            display: block;
+        }
+        .hud-layer {
+            position: absolute;
+            z-index: 10;
+            pointer-events: none;
+        }
+        .hud-interactive {
+            pointer-events: auto;
+        }
+        /* Custom Scrollbar */
+        ::-webkit-scrollbar {
+            width: 6px;
+            height: 6px;
+        }
+        ::-webkit-scrollbar-track {
+            background: rgba(15, 23, 42, 0.6);
+        }
+        ::-webkit-scrollbar-thumb {
+            background: rgba(56, 189, 248, 0.4);
+            border-radius: 3px;
+        }
+        ::-webkit-scrollbar-thumb:hover {
+            background: rgba(56, 189, 248, 0.8);
+        }
+        .glass-panel {
+            background: rgba(15, 23, 42, 0.85);
+            backdrop-filter: blur(12px);
+            -webkit-backdrop-filter: blur(12px);
+            border: 1px solid rgba(56, 189, 248, 0.25);
+            box-shadow: 0 10px 30px -5px rgba(0, 0, 0, 0.6);
+        }
+        .pixel-cell {
+            aspect-ratio: 1 / 1;
+            cursor: crosshair;
+            transition: transform 0.05s ease;
+        }
+        .pixel-cell:hover {
+            transform: scale(1.08);
+            outline: 2px solid #38bdf8;
+            z-index: 2;
+        }
+        @keyframes pulseGlow {
+            0%, 100% { box-shadow: 0 0 12px rgba(56, 189, 248, 0.35); }
+            50% { box-shadow: 0 0 24px rgba(56, 189, 248, 0.75); }
+        }
+        .glow-badge {
+            animation: pulseGlow 2.5s infinite;
+        }
+        #blocker {
+            background-color: rgba(0,0,0,0.75);
+            backdrop-filter: blur(4px);
+        }
+    </style>
+</head>
+<body>
+
+    <!-- FPS Crosshair & Blocker -->
+    <div id="crosshair" class="hud-layer fixed top-1/2 left-1/2 w-2 h-2 bg-white/90 rounded-full -translate-x-1/2 -translate-y-1/2 z-20 pointer-events-none outline outline-2 outline-black/50 mix-blend-difference"></div>
+    <div id="blocker" class="absolute inset-0 z-50 flex items-center justify-center cursor-pointer text-white flex-col transition-opacity">
+        <h1 class="text-6xl font-extrabold mb-4 text-sky-400 drop-shadow-lg tracking-tight">SciTown 3D</h1>
+        <p class="text-lg font-medium text-slate-300 bg-slate-900/80 px-6 py-3 rounded-full border border-slate-700 shadow-xl"><i class="fa-solid fa-computer-mouse mr-2"></i>Click anywhere to enter First-Person View</p>
+    </div>
+
+    <!-- 3D WebGL Canvas -->
+    <canvas id="game-canvas"></canvas>
+
+    <!-- Proximity Interaction Prompt (Floating Center-Bottom) -->
+    <div id="interaction-prompt" class="hud-layer bottom-28 left-1/2 -translate-x-1/2 hidden transition-all duration-200">
+        <button id="interaction-btn" onclick="window.triggerNearbyInteraction()" class="hud-interactive glass-panel glow-badge px-5 py-2.5 rounded-full flex items-center gap-3 text-sm font-semibold text-sky-300 hover:bg-sky-950/80 hover:text-white border border-sky-400/50 transition transform active:scale-95">
+            <span class="bg-sky-500 text-slate-950 font-mono font-bold px-2 py-0.5 rounded text-xs">E / CLICK</span>
+            <span id="interaction-label">Interact with Machine</span>
+        </button>
+    </div>
+
+    <!-- Top Navigation & Telemetry HUD -->
+    <header class="hud-layer top-0 left-0 right-0 p-3 sm:p-4 flex flex-wrap items-center justify-between gap-2">
+        <!-- Left: Brand & Player Stats -->
+        <div class="hud-interactive glass-panel rounded-xl px-3.5 py-2 flex items-center gap-4">
+            <div class="flex items-center gap-2.5">
+                <div class="w-9 h-9 rounded-lg bg-gradient-to-br from-sky-500 to-indigo-600 flex items-center justify-center shadow-md shadow-sky-500/20">
+                    <i class="fa-solid fa-atom text-white text-lg"></i>
+                </div>
+                <div>
+                    <div class="flex items-center gap-2">
+                        <h1 class="font-bold text-sm sm:text-base tracking-tight text-white">SciTown <span class="text-xs font-mono text-sky-400 bg-sky-950/90 px-1.5 py-0.5 rounded border border-sky-500/30">v3.7 SIM</span></h1>
+                        <span id="net-status" class="w-2 h-2 rounded-full bg-emerald-400" title="Multiplayer Connected"></span>
+                    </div>
+                    <p id="hud-location-title" class="text-[11px] font-mono text-slate-300">Lot #0: Machine & Fab Lab</p>
+                </div>
+            </div>
+
+            <div class="h-7 w-px bg-slate-700/70 hidden sm:block"></div>
+
+            <!-- Credits, Houses, Coords -->
+            <div class="flex items-center gap-3 sm:gap-4 text-xs font-mono">
+                <div class="bg-slate-900/90 px-2.5 py-1 rounded-lg border border-amber-500/30 flex items-center gap-1.5">
+                    <i class="fa-solid fa-coins text-amber-400"></i>
+                    <span id="hud-credits" class="font-bold text-amber-300">2,500</span>
+                    <span class="text-slate-400">Cr</span>
+                </div>
+                <div class="bg-slate-900/90 px-2.5 py-1 rounded-lg border border-emerald-500/30 flex items-center gap-1.5" title="Maximum 4 Houses per player (House 1: Machine Lab, House 2: Infinite Material Lab, +2 Expandable Plots)">
+                    <i class="fa-solid fa-house-laptop text-emerald-400"></i>
+                    <span id="hud-houses" class="font-bold text-emerald-300">2/4</span>
+                    <span class="hidden md:inline text-slate-400">Houses</span>
+                </div>
+                <div class="hidden lg:flex bg-slate-900/90 px-2.5 py-1 rounded-lg border border-slate-700 items-center gap-1.5 text-slate-300">
+                    <i class="fa-solid fa-location-crosshairs text-sky-400"></i>
+                    <span id="hud-coords">X: 0m, Z: 0m</span>
+                </div>
+            </div>
+        </div>
+
+        <!-- Right: Quick Action Toolbar -->
+        <div class="hud-interactive flex flex-wrap items-center gap-1.5 sm:gap-2">
+            <button onclick="window.teleportToMyHouse(1)" class="glass-panel hover:bg-slate-800/90 text-xs font-medium px-3 py-2 rounded-xl flex items-center gap-2 transition border border-cyan-500/30 text-cyan-200">
+                <i class="fa-solid fa-cubes-stacked text-cyan-400"></i>
+                <span>Material Vault</span>
+                <span class="bg-cyan-500/20 text-cyan-300 font-mono text-[10px] px-1.5 py-0.2 rounded">House 2</span>
+            </button>
+
+            <button onclick="window.teleportToMyHouse(0)" class="glass-panel hover:bg-slate-800/90 text-xs font-medium px-3 py-2 rounded-xl flex items-center gap-2 transition border border-indigo-500/30 text-indigo-200">
+                <i class="fa-solid fa-industry text-indigo-400"></i>
+                <span>Machine Lab</span>
+                <span class="bg-indigo-500/20 text-indigo-300 font-mono text-[10px] px-1.5 py-0.2 rounded">House 1</span>
+            </button>
+
+            <button onclick="window.openModal('voxel-modal')" class="glass-panel hover:bg-slate-800/90 text-xs font-medium px-3 py-2 rounded-xl flex items-center gap-2 transition border border-pink-500/30 text-pink-200">
+                <i class="fa-solid fa-palette text-pink-400"></i>
+                <span class="hidden sm:inline">7x7x7 Skin</span>
+            </button>
+
+            <button onclick="window.openModal('teleport-modal')" class="glass-panel hover:bg-slate-800/90 text-xs font-medium px-3 py-2 rounded-xl flex items-center gap-2 transition border border-amber-500/30 text-amber-200">
+            <i class="fa-solid fa-bolt text-amber-400"></i>
+            <span class="hidden sm:inline">Teleport & Plots</span>
+        </button>
+
+        <button onclick="window.openModal('trade-modal')" class="glass-panel hover:bg-slate-800/90 text-xs font-medium px-3 py-2 rounded-xl flex items-center gap-2 transition border border-purple-500/30 text-purple-200">
+            <i class="fa-solid fa-handshake text-purple-400"></i>
+            <span class="hidden md:inline">P2P Market</span>
+        </button>
+    </div>
+</header>
+
+<!-- Physical Inventory HUD (Replaces Modals) -->
+<div class="hud-layer bottom-32 left-1/2 -translate-x-1/2 pointer-events-none flex flex-col items-center gap-2 transition-all">
+    <div id="crosshair-target-name" class="hidden text-sm font-bold text-white bg-slate-900/80 px-3 py-1 rounded-full border border-slate-700 backdrop-blur">
+        Looking at: <span class="text-sky-300">Nothing</span>
+    </div>
+    <div class="glass-panel px-4 py-2 rounded-xl border border-emerald-500/50 flex items-center gap-3">
+        <i class="fa-solid fa-hand-holding text-emerald-400 text-lg"></i>
+        <div class="text-xs">
+            <div class="text-slate-400 font-mono">CURRENTLY HOLDING:</div>
+            <div id="hud-held-item" class="font-bold text-emerald-300 text-sm">Empty Hand</div>
+        </div>
+    </div>
+</div>
+
+<!-- Left Quick-Teleport & House Ownership Bar -->
+<aside class="hud-layer left-3 top-20 hidden xl:flex flex-col gap-2 w-60">
+        <div class="hud-interactive glass-panel rounded-xl p-3 text-xs space-y-2.5">
+            <div class="flex items-center justify-between border-b border-slate-700/70 pb-1.5">
+                <span class="font-semibold text-slate-200 flex items-center gap-1.5">
+                    <i class="fa-solid fa-building-shield text-sky-400"></i> Your Estate (Max 4)
+                </span>
+                <span id="estate-lot-range" class="font-mono text-[10px] text-slate-400">Sector #0</span>
+            </div>
+            <div id="owned-houses-list" class="space-y-1.5">
+                <!-- Populated dynamically -->
+            </div>
+            <div class="pt-1 border-t border-slate-800 flex flex-col gap-1 text-[11px] text-slate-400">
+                <div class="flex items-center justify-between">
+                    <span>Player ID:</span>
+                    <span id="hud-userid" class="font-mono text-slate-300 truncate max-w-[130px]" title="">Connecting...</span>
+                </div>
+                <div class="flex items-center justify-between">
+                    <span>Online Scientists:</span>
+                    <span id="hud-online-count" class="font-mono text-emerald-400 font-semibold">1</span>
+                </div>
+            </div>
+        </div>
+
+        <!-- Scientific Live Equation Feed -->
+        <div class="hud-interactive glass-panel rounded-xl p-3 text-xs space-y-1.5">
+            <div class="font-semibold text-sky-300 flex items-center gap-1.5">
+                <i class="fa-solid fa-square-root-variable"></i> Active Physics Kernel
+            </div>
+            <div id="live-formula-box" class="font-mono text-[10px] text-slate-300 bg-slate-950/80 p-2 rounded-lg border border-slate-800 leading-relaxed">
+                ρ_mix = 1 / Σ(w_i / ρ_i)<br>
+                W_bond = 10·Wi·(1/√P80 - 1/√F80)<br>
+                MRR = d · w · f (mm³/min)<br>
+                E_v = P / (v · h · t) (J/mm³)
+            </div>
+        </div>
+    </aside>
+
+    <!-- Bottom Controls & Mobile D-Pad -->
+    <footer class="hud-layer bottom-3 left-3 right-3 flex items-end justify-between pointer-events-none">
+        <!-- Virtual Touch D-Pad for Mobile / Tablet -->
+        <div class="hud-interactive grid grid-cols-3 gap-1.5 w-32 h-32 sm:w-36 sm:h-36 glass-panel p-2 rounded-2xl">
+            <div></div>
+            <button id="btn-up" class="bg-slate-800/90 hover:bg-sky-600/80 active:bg-sky-500 rounded-lg flex items-center justify-center text-white shadow"><i class="fa-solid fa-chevron-up"></i></button>
+            <div></div>
+            <button id="btn-left" class="bg-slate-800/90 hover:bg-sky-600/80 active:bg-sky-500 rounded-lg flex items-center justify-center text-white shadow"><i class="fa-solid fa-chevron-left"></i></button>
+            <button onclick="window.triggerNearbyInteraction()" class="bg-sky-500/30 hover:bg-sky-500/60 border border-sky-400/50 rounded-lg flex items-center justify-center text-sky-200 font-mono text-[10px] font-bold">USE</button>
+            <button id="btn-right" class="bg-slate-800/90 hover:bg-sky-600/80 active:bg-sky-500 rounded-lg flex items-center justify-center text-white shadow"><i class="fa-solid fa-chevron-right"></i></button>
+            <div></div>
+            <button id="btn-down" class="bg-slate-800/90 hover:bg-sky-600/80 active:bg-sky-500 rounded-lg flex items-center justify-center text-white shadow"><i class="fa-solid fa-chevron-down"></i></button>
+            <div></div>
+        </div>
+
+        <!-- Right: Camera & Quick Help -->
+        <div class="hud-interactive glass-panel rounded-xl px-3.5 py-2.5 text-xs flex flex-col sm:flex-row items-end sm:items-center gap-3">
+            <div class="hidden md:block text-slate-300 space-y-0.5">
+                <div><span class="font-mono bg-slate-800 px-1.5 py-0.5 rounded text-sky-300">WASD / Arrows</span> Move 7x7x7 Cube</div>
+                <div><span class="font-mono bg-slate-800 px-1.5 py-0.5 rounded text-sky-300">Drag Mouse</span> Rotate 3D Orbit Camera • <span class="font-mono bg-slate-800 px-1.5 py-0.5 rounded text-sky-300">E</span> Interact</div>
+            </div>
+            <div class="flex items-center gap-2">
+                <button onclick="window.teleportToMyHouse(0)" class="bg-indigo-600 hover:bg-indigo-500 text-white font-medium px-3 py-1.5 rounded-lg transition shadow flex items-center gap-1.5">
+                    <i class="fa-solid fa-industry"></i> House 1: Machines
+                </button>
+                <button onclick="window.teleportToMyHouse(1)" class="bg-cyan-600 hover:bg-cyan-500 text-white font-medium px-3 py-1.5 rounded-lg transition shadow flex items-center gap-1.5">
+                    <i class="fa-solid fa-vault"></i> House 2: Materials
+                </button>
+                <button onclick="window.openAppraiserFromAnywhere()" class="bg-amber-600 hover:bg-amber-500 text-slate-950 font-semibold px-3 py-1.5 rounded-lg transition shadow flex items-center gap-1.5">
+                    <i class="fa-solid fa-robot"></i> Mailbox AI Trader
+                </button>
+            </div>
+        </div>
+    </footer>
+
+    <!-- Toast Notification Container -->
+    <div id="toast-container" class="hud-layer top-20 right-4 z-50 flex flex-col gap-2 max-w-sm w-full pointer-events-none"></div>
+
+    <!-- ===================================================================== -->
+    <!-- MODAL 1: INFINITE MATERIAL VAULT (HOUSE #2)                           -->
+<!-- ===================================================================== -->
+<!-- Removed Material Vault UI (Now Physical) -->
+
+<!-- ===================================================================== -->
+<!-- MODAL 2: SCIENTIFIC FABRICATION WORKBENCH (HOUSE #1 MACHINES)         -->
+<!-- ===================================================================== -->
+<!-- Removed Workbench UI (Now Physical) -->
+
+<!-- ===================================================================== -->
+<!-- MODAL 3: 7x7x7 VOXEL AVATAR TEXTURE STUDIO                            -->
+<!-- ===================================================================== -->
+<div id="voxel-modal" class="hud-layer inset-0 bg-slate-950/80 backdrop-blur-md z-40 hidden flex items-center justify-center p-3 sm:p-6">
+        <div class="hud-interactive glass-panel rounded-2xl max-w-xl w-full overflow-hidden border border-pink-500/40">
+            <div class="p-4 sm:p-5 border-b border-slate-800 flex items-center justify-between bg-slate-900/90">
+                <div class="flex items-center gap-3">
+                    <div class="w-10 h-10 rounded-xl bg-pink-500/20 border border-pink-400/40 flex items-center justify-center text-pink-300 text-lg">
+                        <i class="fa-solid fa-border-all"></i>
+                    </div>
+                    <div>
+                        <h2 class="text-base sm:text-lg font-bold text-white">7×7×7 Pixel Cube Avatar Studio</h2>
+                        <p class="text-xs text-slate-400">Paint your 7×7 voxel skin matrix. Changes sync live in 3D to all players.</p>
+                    </div>
+                </div>
+                <button onclick="window.closeModal('voxel-modal')" class="w-8 h-8 rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-300 flex items-center justify-center"><i class="fa-solid fa-xmark"></i></button>
+            </div>
+
+            <div class="p-5 space-y-5">
+                <!-- Color Palette -->
+                <div>
+                    <label class="text-xs font-mono text-slate-400 block mb-2">SELECT BRUSH COLOR:</label>
+                    <div id="voxel-palette" class="flex flex-wrap gap-2">
+                        <!-- Populated by JS -->
+                    </div>
+                </div>
+
+                <!-- 7x7 Grid Editor -->
+                <div class="flex flex-col sm:flex-row items-center gap-6 justify-center">
+                    <div id="voxel-grid-editor" class="grid grid-cols-7 gap-1 bg-slate-950 p-2.5 rounded-xl border border-slate-700 w-60 h-60 shadow-inner">
+                        <!-- 49 cells populated by JS -->
+                    </div>
+                    <div class="space-y-2.5 flex flex-col w-full sm:w-auto">
+                        <div class="text-xs font-semibold text-slate-300">Quick Presets:</div>
+                        <button onclick="window.loadVoxelPreset('scientist')" class="bg-slate-800 hover:bg-slate-700 text-xs text-left px-3 py-2 rounded-lg border border-slate-700 text-sky-300"><i class="fa-solid fa-user-astronaut mr-1.5"></i> Cybernetic Scientist</button>
+                        <button onclick="window.loadVoxelPreset('quantum')" class="bg-slate-800 hover:bg-slate-700 text-xs text-left px-3 py-2 rounded-lg border border-slate-700 text-emerald-300"><i class="fa-solid fa-atom mr-1.5"></i> Quantum Core 7x7</button>
+                        <button onclick="window.loadVoxelPreset('hazmat')" class="bg-slate-800 hover:bg-slate-700 text-xs text-left px-3 py-2 rounded-lg border border-slate-700 text-amber-300"><i class="fa-solid fa-biohazard mr-1.5"></i> Lab Hazmat Visor</button>
+                        <button onclick="window.loadVoxelPreset('random')" class="bg-slate-800 hover:bg-slate-700 text-xs text-left px-3 py-2 rounded-lg border border-slate-700 text-pink-300"><i class="fa-solid fa-shuffle mr-1.5"></i> Procedural Glitch</button>
+                    </div>
+                </div>
+            </div>
+
+            <div class="p-4 bg-slate-900/90 border-t border-slate-800 flex items-center justify-between">
+                <span class="text-xs font-mono text-slate-400">Resolution: 7×7×7 Voxel Cube</span>
+                <button onclick="window.saveAndApplyVoxelSkin()" class="bg-gradient-to-r from-pink-500 to-rose-600 hover:from-pink-400 hover:to-rose-500 text-white text-xs font-bold px-5 py-2.5 rounded-xl shadow">
+                    <i class="fa-solid fa-floppy-disk mr-1.5"></i> Apply Texture to 3D Cube
+                </button>
+            </div>
+        </div>
+    </div>
+
+    <!-- ===================================================================== -->
+    <!-- MODAL 4: MACHINE FABRICATION MENU                                     -->
+    <!-- ===================================================================== -->
+    <div id="machine-modal" class="hud-layer inset-0 bg-slate-950/80 backdrop-blur-md z-40 hidden flex items-center justify-center p-3 sm:p-6">
+        <div class="hud-interactive glass-panel rounded-2xl max-w-xl w-full border border-indigo-500/40 shadow-2xl">
+            <div class="p-4 sm:p-5 border-b border-slate-800 flex items-center justify-between bg-slate-900/90">
+                <div class="flex items-center gap-3">
+                    <div class="w-10 h-10 rounded-xl bg-indigo-500/20 border border-indigo-400/40 flex items-center justify-center text-indigo-300 text-lg">
+                        <i class="fa-solid fa-microchip"></i>
+                    </div>
+                    <div>
+                        <h2 id="machine-modal-title" class="text-base sm:text-lg font-bold text-white">Machine Interface</h2>
+                        <p class="text-xs text-slate-400">Review computational telemetry and thermodynamics.</p>
+                    </div>
+                </div>
+                <button onclick="window.closeModal('machine-modal')" class="w-8 h-8 rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-300 flex items-center justify-center"><i class="fa-solid fa-xmark"></i></button>
+            </div>
+            <div class="p-5 space-y-4">
+                <div id="machine-modal-formulas" class="font-mono text-xs text-slate-300 bg-slate-950 p-4 rounded-xl border border-slate-800 leading-relaxed shadow-inner">
+                    <!-- Formulas injected dynamically -->
+                </div>
+                <button onclick="window.runMachineProcess()" class="w-full bg-indigo-600 hover:bg-indigo-500 text-white font-bold py-3.5 rounded-xl shadow-lg transition active:scale-[0.98]">
+                    <i class="fa-solid fa-bolt mr-1.5"></i> Execute Fabrication Sequence
+                </button>
+            </div>
+        </div>
+    </div>
+
+<!-- ===================================================================== -->
+<!-- MODAL 5: TELEPORTATION DIRECTORY & REAL ESTATE (MAX 4 HOUSES)         -->
+<!-- ===================================================================== -->
+<div id="teleport-modal" class="hud-layer inset-0 bg-slate-950/80 backdrop-blur-md z-40 hidden flex items-center justify-center p-3 sm:p-6">
+        <div class="hud-interactive glass-panel rounded-2xl max-w-4xl w-full max-h-[88vh] flex flex-col overflow-hidden border border-amber-500/40">
+            <div class="p-4 sm:p-5 border-b border-slate-800 flex items-center justify-between bg-slate-900/90">
+                <div class="flex items-center gap-3">
+                    <div class="w-10 h-10 rounded-xl bg-amber-500/20 border border-amber-400/40 flex items-center justify-center text-amber-300 text-lg">
+                        <i class="fa-solid fa-map-location-dot"></i>
+                    </div>
+                    <div>
+                        <h2 class="text-base sm:text-lg font-bold text-white">Infinite Avenue Teleport & Real Estate Registry</h2>
+                        <p class="text-xs text-slate-400">Teleport to any Lot along the infinite X-axis or expand your laboratory estate (Max 4 Houses per player).</p>
+                    </div>
+                </div>
+                <button onclick="window.closeModal('teleport-modal')" class="w-8 h-8 rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-300 flex items-center justify-center"><i class="fa-solid fa-xmark"></i></button>
+            </div>
+
+            <div class="p-5 overflow-y-auto space-y-5">
+                <!-- Jump to Any Lot Number -->
+                <div class="bg-slate-900/90 border border-slate-800 rounded-xl p-4 flex flex-wrap items-center justify-between gap-3">
+                    <div>
+                        <h3 class="text-xs font-bold uppercase text-sky-400">Instant Coordinate / Lot Teleport</h3>
+                        <p class="text-xs text-slate-400">Enter any house Lot ID (e.g., -500 to +99999) along Infinite Science Avenue:</p>
+                    </div>
+                    <div class="flex items-center gap-2">
+                        <input id="teleport-lot-input" type="number" value="0" class="w-28 bg-slate-950 border border-slate-700 rounded-lg px-3 py-2 text-xs font-mono text-white">
+                        <button onclick="window.teleportToLotInput()" class="bg-sky-600 hover:bg-sky-500 text-white text-xs font-semibold px-4 py-2 rounded-lg shadow">
+                            <i class="fa-solid fa-bolt mr-1"></i> Teleport to Lot
+                        </button>
+                    </div>
+                </div>
+
+                <!-- Expand Estate (Buy House #3 and House #4) -->
+                <div class="bg-slate-900/90 border border-emerald-500/30 rounded-xl p-4 space-y-3">
+                    <div class="flex items-center justify-between">
+                        <div>
+                            <h3 class="text-xs font-bold uppercase text-emerald-400">Your Property Portfolio (<span id="modal-house-count">2</span> / 4 Houses Owned)</h3>
+                            <p class="text-xs text-slate-400">Every player starts with 2 houses (House #1: Machine Lab, House #2: Infinite Material Lab) and can purchase up to 2 additional houses using project profits.</p>
+                        </div>
+                    </div>
+                    <div id="estate-expansion-cards" class="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                        <!-- Populated by JS -->
+                    </div>
+                </div>
+
+                <!-- 64x64 Interactive Map Overlay -->
+                <div class="space-y-2">
+                    <h3 class="text-xs font-bold uppercase text-purple-400">Global Satellite Map (64x64 Grid)</h3>
+                    <p class="text-xs text-slate-400 mb-2"><span class="text-blue-400 font-bold">Blue</span> = Mine | <span class="text-red-400 font-bold">Red</span> = Others | <span class="text-green-400 font-bold">Green</span> = Available. Click any tile to teleport.</p>
+                    <div class="flex justify-center bg-slate-950 p-2 rounded-xl border border-slate-800">
+                        <canvas id="teleport-map-canvas" width="512" height="512" class="bg-slate-900 border border-slate-700 rounded-lg cursor-crosshair max-w-full aspect-square shadow-inner"></canvas>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- ===================================================================== -->
+<!-- MODAL 6: CRAFTED PROJECTS INVENTORY                                   -->
+<!-- ===================================================================== -->
+<!-- Removed Inventory UI (Now Physical) -->
+
+<!-- ===================================================================== -->
+<!-- MODAL 7: MULTIPLAYER P2P TRADE EXCHANGE                               -->
+<!-- ===================================================================== -->
+<div id="trade-modal" class="hud-layer inset-0 bg-slate-950/80 backdrop-blur-md z-40 hidden flex items-center justify-center p-3 sm:p-6">
+        <div class="hud-interactive glass-panel rounded-2xl max-w-4xl w-full max-h-[85vh] flex flex-col overflow-hidden border border-purple-500/40">
+            <div class="p-4 sm:p-5 border-b border-slate-800 flex items-center justify-between bg-slate-900/90">
+                <div class="flex items-center gap-3">
+                    <div class="w-10 h-10 rounded-xl bg-purple-500/20 border border-purple-400/40 flex items-center justify-center text-purple-300 text-lg">
+                        <i class="fa-solid fa-handshake"></i>
+                    </div>
+                    <div>
+                        <h2 class="text-base sm:text-lg font-bold text-white">Global Scientist-to-Scientist Trade Board</h2>
+                        <p class="text-xs text-slate-400">Players cannot edit other players' machines, but anyone can buy or trade engineered components globally.</p>
+                    </div>
+                </div>
+                <button onclick="window.closeModal('trade-modal')" class="w-8 h-8 rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-300 flex items-center justify-center"><i class="fa-solid fa-xmark"></i></button>
+            </div>
+
+            <div class="p-5 overflow-y-auto space-y-5">
+                <!-- List Item Form -->
+                <div class="bg-slate-900/90 border border-slate-800 rounded-xl p-4 flex flex-wrap items-end gap-3">
+                    <div class="flex-1 min-w-[200px]">
+                        <label class="text-[11px] font-mono text-slate-400 block mb-1">SELECT PROJECT TO LIST:</label>
+                        <select id="trade-item-select" class="w-full bg-slate-950 border border-slate-700 rounded-lg px-3 py-2 text-xs text-white"></select>
+                    </div>
+                    <div class="w-36">
+                        <label class="text-[11px] font-mono text-slate-400 block mb-1">ASKING PRICE (Cr):</label>
+                        <input id="trade-price-input" type="number" min="10" value="850" class="w-full bg-slate-950 border border-slate-700 rounded-lg px-3 py-2 text-xs font-mono text-amber-300">
+                    </div>
+                    <button onclick="window.postItemToTradeBoard()" class="bg-purple-600 hover:bg-purple-500 text-white text-xs font-semibold px-4 py-2 rounded-lg shadow">
+                        <i class="fa-solid fa-upload mr-1"></i> List on Market
+                    </button>
+                </div>
+
+                <!-- Active Listings -->
+                <div class="space-y-2">
+                    <h3 class="text-xs font-bold uppercase text-purple-300">Live Market Listings</h3>
+                    <div id="trade-listings-grid" class="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                        <!-- Populated by JS -->
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- ===================================================================== -->
+    <!-- MODAL 8: MAILBOX MESSAGING SYSTEM                                     -->
+    <!-- ===================================================================== -->
+    <div id="mailbox-modal" class="hud-layer inset-0 bg-slate-950/80 backdrop-blur-md z-40 hidden flex items-center justify-center p-3 sm:p-6">
+        <div class="hud-interactive glass-panel rounded-2xl max-w-2xl w-full max-h-[80vh] flex flex-col overflow-hidden border border-blue-500/40">
+            <div class="p-4 sm:p-5 border-b border-slate-800 flex items-center justify-between bg-slate-900/90">
+                <div class="flex items-center gap-3">
+                    <div class="w-10 h-10 rounded-xl bg-blue-500/20 border border-blue-400/40 flex items-center justify-center text-blue-300 text-lg">
+                        <i class="fa-solid fa-envelope"></i>
+                    </div>
+                    <div>
+                        <h2 class="text-base sm:text-lg font-bold text-white">Public Mailbox - <span id="mailbox-lot-title">Lot #0</span></h2>
+                        <p class="text-xs text-slate-400">Leave messages, formulas, and trade offers for the owner or visitors.</p>
+                    </div>
+                </div>
+                <button onclick="window.closeModal('mailbox-modal')" class="w-8 h-8 rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-300 flex items-center justify-center"><i class="fa-solid fa-xmark"></i></button>
+            </div>
+            <div class="p-5 flex flex-col gap-4 overflow-hidden h-[50vh]">
+                <div id="mailbox-messages-list" class="flex-1 overflow-y-auto space-y-3 pr-2">
+                    <!-- Messages loaded dynamically -->
+                </div>
+                <div class="flex gap-2">
+                    <input type="text" id="mailbox-input" class="flex-1 bg-slate-950 border border-slate-700 rounded-lg px-3 py-2 text-sm text-white" placeholder="Write a public message here...">
+                    <button onclick="window.postMailboxMessage()" class="bg-blue-600 hover:bg-blue-500 text-white px-5 py-2 rounded-lg font-bold shadow transition active:scale-95"><i class="fa-solid fa-paper-plane mr-1.5"></i> Post Note</button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- ===================================================================== -->
+    <!-- MODAL 9: AI APPRAISER (GEMINI)                                        -->
+    <!-- ===================================================================== -->
+    <div id="appraiser-modal" class="hud-layer inset-0 bg-slate-950/80 backdrop-blur-md z-40 hidden flex items-center justify-center p-3 sm:p-6">
+        <div class="hud-interactive glass-panel rounded-2xl max-w-4xl w-full max-h-[90vh] flex flex-col overflow-hidden border border-amber-500/40">
+            <div class="p-4 sm:p-5 border-b border-slate-800 flex items-center justify-between bg-slate-900/90">
+                <div class="flex items-center gap-3">
+                    <div class="w-10 h-10 rounded-xl bg-amber-500/20 border border-amber-400/40 flex items-center justify-center text-amber-300 text-lg">
+                        <i class="fa-solid fa-robot"></i>
+                    </div>
+                    <div>
+                        <h2 class="text-base sm:text-lg font-bold text-white">Dr. Maxwell-7 • Scientific AI Appraiser</h2>
+                        <p class="text-xs text-slate-400">Present your fabricated projects for physical analysis and commercial valuation.</p>
+                    </div>
+                </div>
+                <button onclick="window.closeModal('appraiser-modal')" class="w-8 h-8 rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-300 flex items-center justify-center"><i class="fa-solid fa-xmark"></i></button>
+            </div>
+
+            <div class="flex flex-col md:flex-row h-full overflow-hidden">
+                <div class="w-full md:w-1/3 bg-slate-900/50 border-r border-slate-800 p-4 flex flex-col gap-3 overflow-y-auto">
+                    <h3 class="text-xs font-bold uppercase text-slate-400">Your Inventory</h3>
+                    <div id="appraiser-item-list" class="space-y-2"></div>
+                </div>
+                <div class="w-full md:w-2/3 p-5 overflow-y-auto space-y-4">
+                    <div id="appraiser-selected-preview" class="hidden bg-slate-900 border border-sky-500/30 rounded-xl p-4 text-xs"></div>
+                    
+                    <div class="space-y-2">
+                        <label class="text-xs font-bold text-slate-400 uppercase">Optional Pitch (Context for AI):</label>
+                        <textarea id="appraiser-pitch" rows="2" class="w-full bg-slate-950 border border-slate-700 rounded-lg px-3 py-2 text-sm text-white resize-none" placeholder="E.g., Designed for ultra-high temperature aerospace environments..."></textarea>
+                    </div>
+
+                    <button id="btn-run-appraisal" onclick="window.evaluateItemWithGemini()" class="w-full bg-amber-600 hover:bg-amber-500 text-slate-950 font-bold py-3 rounded-xl shadow-lg transition active:scale-[0.98] flex items-center justify-center gap-2">
+                        <i class="fa-solid fa-microchip"></i> Run Gemini Physical Analysis
+                    </button>
+                    
+                    <div id="ai-loading-indicator" class="hidden text-center py-4 text-amber-400 text-sm font-bold animate-pulse">
+                        <i class="fa-solid fa-spinner fa-spin mr-2"></i> Dr. Maxwell-7 is evaluating structural integrity...
+                    </div>
+
+                    <div id="ai-offer-box" class="hidden bg-amber-950/40 border border-amber-500/50 rounded-xl p-5 space-y-4 relative overflow-hidden">
+                        <div class="absolute -right-4 -top-4 opacity-10"><i class="fa-solid fa-scale-balanced text-9xl text-amber-500"></i></div>
+                        <div class="relative z-10">
+                            <div class="text-xs font-bold text-amber-500 uppercase mb-1">Appraisal Report:</div>
+                            <div id="ai-dialogue-text" class="text-sm italic text-amber-100/90 leading-relaxed border-l-2 border-amber-500/50 pl-3"></div>
+                            <div id="ai-tier-rating" class="mt-3 text-xs font-mono font-bold text-emerald-400"></div>
+                            
+                            <div class="mt-4 flex flex-wrap items-center justify-between gap-4 pt-4 border-t border-amber-500/30">
+                                <div>
+                                    <div class="text-[10px] text-amber-500/70 font-bold uppercase">Final Offer</div>
+                                    <div id="ai-offer-amount" class="text-2xl font-bold text-amber-400 font-mono"></div>
+                                </div>
+                                <button onclick="window.sellSelectedToAI()" class="bg-emerald-600 hover:bg-emerald-500 text-white font-bold px-6 py-2.5 rounded-xl shadow transition active:scale-95">
+                                    <i class="fa-solid fa-handshake mr-1.5"></i> Accept & Sell
+                                </button>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- ===================================================================== -->
+    <!-- APPLICATION LOGIC, SCIENTIFIC ENGINE, 3D WORLD & FIREBASE             -->
+    <!-- ===================================================================== -->
+    <script type="module">
+        import { initializeApp } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-app.js";
+        import { getAuth, signInAnonymously, signInWithCustomToken, onAuthStateChanged } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-auth.js";
+        import { getFirestore, doc, setDoc, getDoc, updateDoc, deleteDoc, collection, onSnapshot, addDoc } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js";
+
+        // ---------------------------------------------------------------------
+        // 1. CONSTANTS & SCIENTIFIC DATABASE
+        // ---------------------------------------------------------------------
+        const MATERIALS_DB = [
+            // --- METALS & REFRACTORIES ---
+            { id: 'mat-fe', name: 'Iron', symbol: 'Fe', category: 'Metal', color: '#cbd5e1', density: 7.87, meltC: 1538, modulusGPa: 211, yieldMPa: 350, thermalW: 80.2, specHeat: 449, latentHeat: 247, workIndex: 14.5, baseCost: 15 },
+            { id: 'mat-cu', name: 'Copper', symbol: 'Cu', category: 'Metal', color: '#b45309', density: 8.96, meltC: 1085, modulusGPa: 110, yieldMPa: 210, thermalW: 401, specHeat: 385, latentHeat: 205, workIndex: 12.0, baseCost: 45 },
+            { id: 'mat-al', name: 'Aluminum', symbol: 'Al', category: 'Metal', color: '#94a3b8', density: 2.70, meltC: 660, modulusGPa: 69, yieldMPa: 276, thermalW: 237, specHeat: 897, latentHeat: 397, workIndex: 10.2, baseCost: 22 },
+            { id: 'mat-ti', name: 'Titanium', symbol: 'Ti', category: 'Metal', color: '#e2e8f0', density: 4.50, meltC: 1668, modulusGPa: 116, yieldMPa: 830, thermalW: 21.9, specHeat: 522, latentHeat: 440, workIndex: 18.5, baseCost: 280 },
+            { id: 'mat-w', name: 'Tungsten', symbol: 'W', category: 'Metal', color: '#64748b', density: 19.25, meltC: 3422, modulusGPa: 411, yieldMPa: 1300, thermalW: 173, specHeat: 132, latentHeat: 259, workIndex: 22.0, baseCost: 550 },
+            { id: 'mat-ni', name: 'Nickel', symbol: 'Ni', category: 'Metal', color: '#9ca3af', density: 8.90, meltC: 1455, modulusGPa: 200, yieldMPa: 380, thermalW: 90.9, specHeat: 444, latentHeat: 297, workIndex: 15.2, baseCost: 65 },
+            { id: 'mat-cr', name: 'Chromium', symbol: 'Cr', category: 'Metal', color: '#cbd5e1', density: 7.19, meltC: 1907, modulusGPa: 279, yieldMPa: 360, thermalW: 93.9, specHeat: 449, latentHeat: 326, workIndex: 16.0, baseCost: 55 },
+            { id: 'mat-mo', name: 'Molybdenum', symbol: 'Mo', category: 'Metal', color: '#94a3b8', density: 10.28, meltC: 2623, modulusGPa: 329, yieldMPa: 560, thermalW: 138.0, specHeat: 250, latentHeat: 375, workIndex: 19.1, baseCost: 190 },
+            { id: 'mat-pt', name: 'Platinum', symbol: 'Pt', category: 'Metal', color: '#e2e8f0', density: 21.45, meltC: 1768, modulusGPa: 168, yieldMPa: 140, thermalW: 71.6, specHeat: 133, latentHeat: 113, workIndex: 13.0, baseCost: 1100 },
+            { id: 'mat-au', name: 'Gold', symbol: 'Au', category: 'Metal', color: '#facc15', density: 19.30, meltC: 1064, modulusGPa: 78, yieldMPa: 100, thermalW: 318, specHeat: 129, latentHeat: 64, workIndex: 9.8, baseCost: 1500 },
+            { id: 'mat-ag', name: 'Silver', symbol: 'Ag', category: 'Metal', color: '#f8fafc', density: 10.49, meltC: 961, modulusGPa: 83, yieldMPa: 170, thermalW: 429, specHeat: 235, latentHeat: 105, workIndex: 10.5, baseCost: 350 },
+            { id: 'mat-mg', name: 'Magnesium', symbol: 'Mg', category: 'Metal', color: '#d1d5db', density: 1.74, meltC: 650, modulusGPa: 45, yieldMPa: 160, thermalW: 156, specHeat: 1023, latentHeat: 368, workIndex: 11.2, baseCost: 30 },
+            { id: 'mat-zr', name: 'Zirconium', symbol: 'Zr', category: 'Metal', color: '#9ca3af', density: 6.52, meltC: 1855, modulusGPa: 88, yieldMPa: 450, thermalW: 22.7, specHeat: 278, latentHeat: 225, workIndex: 17.0, baseCost: 310 },
+            { id: 'mat-ta', name: 'Tantalum', symbol: 'Ta', category: 'Metal', color: '#475569', density: 16.69, meltC: 3017, modulusGPa: 186, yieldMPa: 690, thermalW: 57.5, specHeat: 140, latentHeat: 174, workIndex: 21.0, baseCost: 650 },
+            { id: 'mat-nb', name: 'Niobium', symbol: 'Nb', category: 'Metal', color: '#94a3b8', density: 8.57, meltC: 2477, modulusGPa: 105, yieldMPa: 310, thermalW: 53.7, specHeat: 268, latentHeat: 289, workIndex: 18.0, baseCost: 400 },
+
+            // --- ADVANCED, SEMICONDUCTORS & CERAMICS ---
+            { id: 'mat-c', name: 'Graphene', symbol: 'C-Gr', category: 'Advanced', color: '#1e293b', density: 2.26, meltC: 3600, modulusGPa: 1050, yieldMPa: 13000, thermalW: 3000, specHeat: 710, latentHeat: 117, workIndex: 28.0, baseCost: 1200 },
+            { id: 'mat-cnt', name: 'Carbon Nanotubes', symbol: 'CNT', category: 'Advanced', color: '#0f172a', density: 1.35, meltC: 3550, modulusGPa: 950, yieldMPa: 11000, thermalW: 2400, specHeat: 680, latentHeat: 110, workIndex: 26.5, baseCost: 1400 },
+            { id: 'mat-si', name: 'Silicon', symbol: 'Si', category: 'Semiconductor', color: '#334155', density: 2.33, meltC: 1414, modulusGPa: 162, yieldMPa: 7000, thermalW: 149, specHeat: 700, latentHeat: 1810, workIndex: 16.2, baseCost: 180 },
+            { id: 'mat-ge', name: 'Germanium', symbol: 'Ge', category: 'Semiconductor', color: '#475569', density: 5.32, meltC: 938, modulusGPa: 103, yieldMPa: 3200, thermalW: 60.2, specHeat: 320, latentHeat: 466, workIndex: 15.0, baseCost: 320 },
+            { id: 'mat-sic', name: 'Silicon Carbide', symbol: 'SiC', category: 'Advanced', color: '#334155', density: 3.21, meltC: 2730, modulusGPa: 410, yieldMPa: 3400, thermalW: 120, specHeat: 670, latentHeat: 800, workIndex: 24.0, baseCost: 420 },
+            { id: 'mat-al2o3', name: 'Alumina Sapphire', symbol: 'Al2O3', category: 'Advanced', color: '#60a5fa', density: 3.98, meltC: 2072, modulusGPa: 380, yieldMPa: 3000, thermalW: 35.0, specHeat: 880, latentHeat: 1070, workIndex: 23.5, baseCost: 310 },
+            { id: 'mat-zro2', name: 'Zirconia Ceramic', symbol: 'ZrO2', category: 'Advanced', color: '#f8fafc', density: 5.68, meltC: 2715, modulusGPa: 210, yieldMPa: 2000, thermalW: 2.7, specHeat: 450, latentHeat: 707, workIndex: 22.0, baseCost: 380 },
+            { id: 'mat-b4c', name: 'Boron Carbide', symbol: 'B4C', category: 'Advanced', color: '#1e293b', density: 2.52, meltC: 2763, modulusGPa: 450, yieldMPa: 3200, thermalW: 30.0, specHeat: 950, latentHeat: 900, workIndex: 29.0, baseCost: 590 },
+            { id: 'mat-aln', name: 'Aluminum Nitride', symbol: 'AlN', category: 'Advanced', color: '#93c5fd', density: 3.26, meltC: 2200, modulusGPa: 310, yieldMPa: 2400, thermalW: 285.0, specHeat: 740, latentHeat: 650, workIndex: 21.0, baseCost: 460 },
+            { id: 'mat-gaas', name: 'Gallium Arsenide', symbol: 'GaAs', category: 'Semiconductor', color: '#64748b', density: 5.32, meltC: 1238, modulusGPa: 85, yieldMPa: 1900, thermalW: 55.0, specHeat: 350, latentHeat: 720, workIndex: 17.5, baseCost: 520 },
+
+            // --- CHEMICALS, SOLVENTS & LIQUIDS (FLOOR 2) ---
+            { id: 'mat-h2o', name: 'Pure Water', symbol: 'H2O', category: 'Chemical', color: '#38bdf8', density: 1.00, meltC: 0, modulusGPa: 2.2, yieldMPa: 0, thermalW: 0.6, specHeat: 4184, latentHeat: 334, workIndex: 1.0, baseCost: 5 },
+            { id: 'mat-h2so4', name: 'Sulfuric Acid', symbol: 'H2SO4', category: 'Chemical', color: '#fef08a', density: 1.84, meltC: 10, modulusGPa: 2.9, yieldMPa: 0, thermalW: 0.36, specHeat: 1420, latentHeat: 100, workIndex: 1.0, baseCost: 18 },
+            { id: 'mat-hno3', name: 'Nitric Acid', symbol: 'HNO3', category: 'Chemical', color: '#fed7aa', density: 1.51, meltC: -42, modulusGPa: 2.4, yieldMPa: 0, thermalW: 0.28, specHeat: 1750, latentHeat: 160, workIndex: 1.0, baseCost: 24 },
+            { id: 'mat-hcl', name: 'Hydrochloric Acid', symbol: 'HCl', category: 'Chemical', color: '#fef9c3', density: 1.18, meltC: -30, modulusGPa: 2.3, yieldMPa: 0, thermalW: 0.45, specHeat: 3100, latentHeat: 210, workIndex: 1.0, baseCost: 16 },
+            { id: 'mat-hf', name: 'Hydrofluoric Acid', symbol: 'HF', category: 'Chemical', color: '#e0f2fe', density: 1.15, meltC: -83, modulusGPa: 2.1, yieldMPa: 0, thermalW: 0.32, specHeat: 2500, latentHeat: 220, workIndex: 1.0, baseCost: 85 },
+            { id: 'mat-naoh', name: 'Sodium Hydroxide', symbol: 'NaOH', category: 'Chemical', color: '#f1f5f9', density: 2.13, meltC: 318, modulusGPa: 2.5, yieldMPa: 0, thermalW: 0.58, specHeat: 3200, latentHeat: 170, workIndex: 1.0, baseCost: 20 },
+            { id: 'mat-acetone', name: 'Acetone', symbol: 'C3H6O', category: 'Chemical', color: '#cbd5e1', density: 0.78, meltC: -95, modulusGPa: 1.1, yieldMPa: 0, thermalW: 0.16, specHeat: 2160, latentHeat: 520, workIndex: 1.0, baseCost: 14 },
+            { id: 'mat-ethanol', name: 'Ethanol', symbol: 'C2H5OH', category: 'Chemical', color: '#e2e8f0', density: 0.79, meltC: -114, modulusGPa: 1.2, yieldMPa: 0, thermalW: 0.17, specHeat: 2440, latentHeat: 846, workIndex: 1.0, baseCost: 12 },
+            { id: 'mat-dmf', name: 'Dimethylformamide', symbol: 'DMF', category: 'Chemical', color: '#fef3c7', density: 0.94, meltC: -61, modulusGPa: 1.6, yieldMPa: 0, thermalW: 0.19, specHeat: 2050, latentHeat: 490, workIndex: 1.0, baseCost: 38 },
+            { id: 'mat-hg', name: 'Mercury', symbol: 'Hg', category: 'Chemical', color: '#94a3b8', density: 13.53, meltC: -39, modulusGPa: 28.5, yieldMPa: 0, thermalW: 8.3, specHeat: 139, latentHeat: 11, workIndex: 1.0, baseCost: 210 },
+            { id: 'mat-galinstan', name: 'Galinstan Alloy', symbol: 'GaInSn', category: 'Chemical', color: '#cbd5e1', density: 6.44, meltC: -19, modulusGPa: 24.0, yieldMPa: 0, thermalW: 16.5, specHeat: 295, latentHeat: 28, workIndex: 1.0, baseCost: 350 },
+            { id: 'mat-silicone', name: 'Silicone Precursor', symbol: 'PDMS', category: 'Chemical', color: '#bae6fd', density: 0.97, meltC: -50, modulusGPa: 1.4, yieldMPa: 0, thermalW: 0.15, specHeat: 1460, latentHeat: 120, workIndex: 1.0, baseCost: 55 },
+            { id: 'mat-epoxy', name: 'Epoxy Resin Monomer', symbol: 'EP-M', category: 'Chemical', color: '#fef08a', density: 1.16, meltC: -15, modulusGPa: 3.5, yieldMPa: 0, thermalW: 0.20, specHeat: 1800, latentHeat: 140, workIndex: 1.0, baseCost: 48 },
+
+            // --- COMPRESSED & CRYOGENIC GASES (FLOOR 3) ---
+            { id: 'mat-o2', name: 'Oxygen', symbol: 'O2', category: 'Gas', color: '#bae6fd', density: 0.0014, meltC: -218, modulusGPa: 0, yieldMPa: 0, thermalW: 0.026, specHeat: 918, latentHeat: 13.8, workIndex: 1.0, baseCost: 12 },
+            { id: 'mat-n2', name: 'Nitrogen', symbol: 'N2', category: 'Gas', color: '#e0f2fe', density: 0.0012, meltC: -210, modulusGPa: 0, yieldMPa: 0, thermalW: 0.025, specHeat: 1040, latentHeat: 25.6, workIndex: 1.0, baseCost: 8 },
+            { id: 'mat-h2', name: 'Hydrogen', symbol: 'H2', category: 'Gas', color: '#f0f9ff', density: 0.00008, meltC: -259, modulusGPa: 0, yieldMPa: 0, thermalW: 0.18, specHeat: 14300, latentHeat: 58.0, workIndex: 1.0, baseCost: 35 },
+            { id: 'mat-ar', name: 'Argon Shielding Gas', symbol: 'Ar', category: 'Gas', color: '#c7d2fe', density: 0.0017, meltC: -189, modulusGPa: 0, yieldMPa: 0, thermalW: 0.017, specHeat: 520, latentHeat: 29.5, workIndex: 1.0, baseCost: 28 },
+            { id: 'mat-he', name: 'Helium Coolant', symbol: 'He', category: 'Gas', color: '#fae8ff', density: 0.00017, meltC: -272, modulusGPa: 0, yieldMPa: 0, thermalW: 0.15, specHeat: 5193, latentHeat: 20.9, workIndex: 1.0, baseCost: 80 },
+            { id: 'mat-ch4', name: 'Methane Gas', symbol: 'CH4', category: 'Gas', color: '#dcfce7', density: 0.00065, meltC: -182, modulusGPa: 0, yieldMPa: 0, thermalW: 0.034, specHeat: 2220, latentHeat: 58.5, workIndex: 1.0, baseCost: 15 },
+            { id: 'mat-co2', name: 'Carbon Dioxide', symbol: 'CO2', category: 'Gas', color: '#f1f5f9', density: 0.0019, meltC: -78, modulusGPa: 0, yieldMPa: 0, thermalW: 0.016, specHeat: 844, latentHeat: 199.0, workIndex: 1.0, baseCost: 10 },
+            { id: 'mat-xe', name: 'Xenon Ion Propellant', symbol: 'Xe', category: 'Gas', color: '#ddd6fe', density: 0.0058, meltC: -111, modulusGPa: 0, yieldMPa: 0, thermalW: 0.005, specHeat: 158, latentHeat: 17.5, workIndex: 1.0, baseCost: 450 },
+            { id: 'mat-sf6', name: 'Sulfur Hexafluoride', symbol: 'SF6', category: 'Gas', color: '#fbcfe8', density: 0.0061, meltC: -50, modulusGPa: 0, yieldMPa: 0, thermalW: 0.013, specHeat: 665, latentHeat: 38.0, workIndex: 1.0, baseCost: 160 },
+            { id: 'mat-nh3', name: 'Ammonia Gas', symbol: 'NH3', category: 'Gas', color: '#fed7aa', density: 0.00073, meltC: -77, modulusGPa: 0, yieldMPa: 0, thermalW: 0.024, specHeat: 2175, latentHeat: 332.0, workIndex: 1.0, baseCost: 22 },
+            { id: 'mat-cl2', name: 'Chlorine Gas', symbol: 'Cl2', category: 'Gas', color: '#ecfccb', density: 0.0032, meltC: -101, modulusGPa: 0, yieldMPa: 0, thermalW: 0.008, specHeat: 478, latentHeat: 90.0, workIndex: 1.0, baseCost: 40 }
+        ];
+
+        function showToast(title, message, type = 'info') {
+            const container = document.getElementById('toast-container');
+            const icons = { info: 'fa-circle-info text-sky-400', success: 'fa-circle-check text-emerald-400', warn: 'fa-triangle-exclamation text-amber-400' };
+            const colors = { info: 'border-sky-500/50 bg-slate-900/90', success: 'border-emerald-500/50 bg-emerald-950/90', warn: 'border-amber-500/50 bg-amber-950/90' };
+            const el = document.createElement('div');
+            el.className = `glass-panel px-4 py-3 rounded-xl border ${colors[type] || colors.info} shadow-xl transition-all duration-300 flex items-start gap-3`;
+            el.innerHTML = `
+                <i class="fa-solid ${icons[type] || icons.info} mt-0.5"></i>
+                <div class="text-xs">
+                    <div class="font-bold text-white">${title}</div>
+                    <div class="text-slate-300 mt-0.5">${message}</div>
+                </div>
+            `;
+            container.appendChild(el);
+            setTimeout(() => {
+                el.style.opacity = '0';
+                el.style.transform = 'translateX(20px)';
+                setTimeout(() => el.remove(), 300);
+            }, 4200);
+        }
+
+        // ---------------------------------------------------------------------
+        // 2. PLAYER STATE, MULTIPLAYER & ESTATE MANAGEMENT
+        // ---------------------------------------------------------------------
+        const GRID_SIZE = 64;
+        const TOTAL_HOUSES = GRID_SIZE * GRID_SIZE;
+        const LOT_SPACING_X = 64; // Expanded for massive apartments
+        const LOT_SPACING_Z = 64;
+
+        const initialBaseLot = Math.floor(Math.random() * (TOTAL_HOUSES - 10));
+
+        const state = {
+            userId: 'local-' + Math.random().toString(36).substring(2, 8),
+            credits: 2500,
+            homeBaseLot: initialBaseLot,
+            ownedHouses: [
+                { lotIndex: initialBaseLot, type: 'MACHINE_LAB', title: 'House #1: Machine & Fab Lab' },
+                { lotIndex: initialBaseLot + 1, type: 'MATERIAL_VAULT', title: 'House #2: Infinite Material Lab' }
+            ],
+            position: { 
+                x: (initialBaseLot % GRID_SIZE) * LOT_SPACING_X, 
+                y: 1.6, 
+                z: Math.floor(initialBaseLot / GRID_SIZE) * LOT_SPACING_Z + 16 
+            },
+            targetLot: 0,
+            heldItem: null,
+            activeMachine: 'SMELTER',
+            machineParams: {
+                furnaceTempC: 1750,
+                holdTimeMin: 45,
+                feedSizeUm: 2500,
+                millRpm: 420,
+                millMinutes: 60,
+                laserPowerW: 320,
+                scanSpeedMmS: 950,
+                layerThicknessUm: 30,
+                cutDepthMm: 2.5,
+                feedRateMmMin: 1200,
+                spindleRpm: 18000,
+                pressureBar: 35,
+                catalystRatio: 12
+            },
+            pipelineStages: [],
+            craftedInventory: [],
+            selectedAppraisalItemId: null,
+            lastAiOffer: null,
+            activeBrushColor: '#38bdf8',
+            voxelGrid: [],
+            otherPlayers: {},
+            publicHouses: {},
+            tradeListings: [],
+            mailboxMessages: {},
+            currentMailboxLot: 0
+        };
+
+        // Initialize default starter project so player can test the AI Appraiser right away
+        function createStarterProject() {
+            state.craftedInventory.push({
+                id: 'proj-init-1',
+                name: 'Ti-6Al-4V Graphene Cryo-Turbine Blade',
+                archetype: 'Turbine Blade',
+                composition: '70% Titanium Grade 5, 20% Aluminum 6061, 10% CVD Graphene',
+                massKg: 4.2,
+                density: 3.86,
+                modulusGPa: 188.5,
+                yieldMPa: 1125,
+                meltingC: 1660,
+                thermalW: 221.4,
+                toleranceUm: 3.4,
+                stages: ['Arc Vacuum Smelting (1750°C)', 'Planetary Ball Mill (18.4 μm)', '5-Axis CNC Finish (±3.4 μm)'],
+                scientificValueEstimate: 1420
+            });
+            state.selectedAppraisalItemId = 'proj-init-1';
+        }
+        createStarterProject();
+
+        // ---------------------------------------------------------------------
+        // 4. 7x7x7 VOXEL SKIN STUDIO & PROCEDURAL TEXTURE GENERATOR
+        // ---------------------------------------------------------------------
+        const VOXEL_PALETTE = [
+            '#0f172a', '#1e293b', '#475569', '#94a3b8', '#f8fafc',
+            '#38bdf8', '#0284c7', '#6366f1', '#a855f7', '#ec4899',
+            '#f43f5e', '#f97316', '#eab308', '#22c55e', '#14b8a6'
+        ];
+
+        function getPresetGrid(presetName) {
+            const B = '#0f172a', S = '#38bdf8', W = '#f8fafc', G = '#6366f1', E = '#22c55e', A = '#eab308', R = '#f43f5e';
+            if (presetName === 'quantum') {
+                return [
+                    B,B,E,E,E,B,B,
+                    B,E,B,E,B,E,B,
+                    E,B,E,W,E,B,E,
+                    E,E,W,S,W,E,E,
+                    E,B,E,W,E,B,E,
+                    B,E,B,E,B,E,B,
+                    B,B,E,E,E,B,B
+                ];
+            }
+            if (presetName === 'hazmat') {
+                return [
+                    A,A,A,A,A,A,A,
+                    A,B,B,B,B,B,A,
+                    A,B,S,S,S,B,A,
+                    A,B,S,W,S,B,A,
+                    A,A,B,B,B,A,A,
+                    A,R,A,R,A,R,A,
+                    A,A,A,A,A,A,A
+                ];
+            }
+            if (presetName === 'random') {
+                return Array.from({ length: 49 }, () => VOXEL_PALETTE[Math.floor(Math.random() * VOXEL_PALETTE.length)]);
+            }
+            // Default: 'scientist'
+            return [
+                G,G,G,G,G,G,G,
+                G,B,B,B,B,B,G,
+                G,S,W,S,W,S,G,
+                G,S,S,S,S,S,G,
+                G,B,B,B,B,B,G,
+                G,B,S,S,S,B,G,
+                G,G,G,G,G,G,G
+            ];
+        }
+
+        state.voxelGrid = getPresetGrid('scientist');
+
+        function createTextureFrom7x7Grid(gridArray) {
+            const canvas = document.createElement('canvas');
+            canvas.width = 140;
+            canvas.height = 140;
+            const ctx = canvas.getContext('2d');
+            const cellSize = 20;
+            for (let i = 0; i < 49; i++) {
+                const r = Math.floor(i / 7);
+                const c = i % 7;
+                ctx.fillStyle = gridArray[i] || '#38bdf8';
+                ctx.fillRect(c * cellSize, r * cellSize, cellSize, cellSize);
+                // Crisp subtle voxel border
+                ctx.strokeStyle = 'rgba(15, 23, 42, 0.28)';
+                ctx.lineWidth = 1.5;
+                ctx.strokeRect(c * cellSize, r * cellSize, cellSize, cellSize);
+            }
+            const tex = new THREE.CanvasTexture(canvas);
+            tex.magFilter = THREE.NearestFilter;
+            tex.minFilter = THREE.NearestFilter;
+            return tex;
+        }
+
+        function renderVoxelEditorUI() {
+            const paletteEl = document.getElementById('voxel-palette');
+            paletteEl.innerHTML = VOXEL_PALETTE.map(c => `
+                <button onclick="window.selectBrushColor('${c}')" class="w-7 h-7 rounded-lg border-2 ${state.activeBrushColor === c ? 'border-white scale-110 shadow-lg' : 'border-slate-700'}" style="background:${c}"></button>
+            `).join('');
+
+            const gridEl = document.getElementById('voxel-grid-editor');
+            gridEl.innerHTML = state.voxelGrid.map((color, idx) => `
+                <div onmousedown="window.paintVoxelCell(${idx})" onmouseenter="if(event.buttons===1) window.paintVoxelCell(${idx})" class="pixel-cell rounded-sm" style="background:${color}"></div>
+            `).join('');
+        }
+
+        window.selectBrushColor = (color) => {
+            state.activeBrushColor = color;
+            renderVoxelEditorUI();
+        };
+
+        window.paintVoxelCell = (idx) => {
+            state.voxelGrid[idx] = state.activeBrushColor;
+            const cells = document.getElementById('voxel-grid-editor').children;
+            if (cells[idx]) cells[idx].style.background = state.activeBrushColor;
+            updateLocalPlayerVoxelTexture();
+        };
+
+        window.loadVoxelPreset = (preset) => {
+            state.voxelGrid = getPresetGrid(preset);
+            renderVoxelEditorUI();
+            updateLocalPlayerVoxelTexture();
+        };
+
+        function updateLocalPlayerVoxelTexture() {
+            if (typeof playerGroup !== 'undefined' && playerGroup.children.length > 0) {
+                const mesh = playerGroup.children[0];
+                if (mesh && mesh.material) {
+                    mesh.material.map = createTextureFrom7x7Grid(state.voxelGrid);
+                    mesh.material.needsUpdate = true;
+                }
+            }
+        }
+
+        window.saveAndApplyVoxelSkin = () => {
+            updateLocalPlayerVoxelTexture();
+            syncPlayerPresenceToCloud();
+            window.closeModal('voxel-modal');
+            showToast('7×7×7 Voxel Texture Applied', 'Your custom 7×7×7 pixel cube skin is live and synced to multiplayer!', 'success');
+        };
+
+        // ---------------------------------------------------------------------
+        // 5. THREE.JS INFINITE 3D SCIENCE TOWN, MACHINES & MAILBOX AI NPC
+        // ---------------------------------------------------------------------
+        const canvas = document.getElementById('game-canvas');
+        const renderer = new THREE.WebGLRenderer({ canvas, antialias: true });
+        renderer.setSize(window.innerWidth, window.innerHeight);
+        renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
+        renderer.shadowMap.enabled = true;
+        renderer.shadowMap.type = THREE.PCFSoftShadowMap;
+
+        const scene = new THREE.Scene();
+        scene.background = new THREE.Color(0x87CEEB); // Bright day sky blue
+        scene.fog = new THREE.FogExp2(0x87CEEB, 0.0035);
+
+        const playerGroup = new THREE.Group();
+        // Local player 7x7x7 voxel mesh (visible if looking down)
+        const playerMeshGeo = new THREE.BoxGeometry(1.75, 1.75, 1.75);
+        const playerMeshMat = new THREE.MeshStandardMaterial({
+            map: createTextureFrom7x7Grid(state.voxelGrid),
+            roughness: 0.4
+        });
+        const playerMesh = new THREE.Mesh(playerMeshGeo, playerMeshMat);
+        playerMesh.position.y = 0.875;
+        playerGroup.add(playerMesh);
+        scene.add(playerGroup);
+
+        const camera = new THREE.PerspectiveCamera(65, window.innerWidth / window.innerHeight, 0.1, 400);
+
+        // Lighting for Daytime
+        const hemiLight = new THREE.HemisphereLight(0xffffff, 0x444444, 0.85);
+        scene.add(hemiLight);
+
+        const dirLight = new THREE.DirectionalLight(0xffffff, 1.4);
+        dirLight.position.set(35, 80, 40);
+        dirLight.castShadow = true;
+        dirLight.shadow.mapSize.width = 2048;
+        dirLight.shadow.mapSize.height = 2048;
+        dirLight.shadow.camera.near = 1;
+        dirLight.shadow.camera.far = 250;
+        const d = 80;
+        dirLight.shadow.camera.left = -d;
+        function createProceduralTexture(type) {
+        const c = document.createElement('canvas');
+        c.width = 512; c.height = 512;
+        const ctx = c.getContext('2d');
+        
+        if (type === 'floor') {
+            // Realistic Tile/Concrete Floor
+            ctx.fillStyle = '#1e293b';
+            ctx.fillRect(0, 0, 512, 512);
+            ctx.strokeStyle = '#334155';
+            ctx.lineWidth = 4;
+            for (let i = 0; i <= 512; i += 64) {
+                ctx.beginPath(); ctx.moveTo(i, 0); ctx.lineTo(i, 512); ctx.stroke();
+                ctx.beginPath(); ctx.moveTo(0, i); ctx.lineTo(512, i); ctx.stroke();
+            }
+            // Noise
+            for (let i=0; i<10000; i++) {
+                ctx.fillStyle = `rgba(255,255,255,${Math.random()*0.05})`;
+                ctx.fillRect(Math.random()*512, Math.random()*512, 2, 2);
+            }
+        } else if (type === 'wall') {
+            // Realistic Plaster/Metal Wall
+            ctx.fillStyle = '#475569';
+            ctx.fillRect(0, 0, 512, 512);
+            for (let i=0; i<20000; i++) {
+                ctx.fillStyle = `rgba(0,0,0,${Math.random()*0.03})`;
+                ctx.fillRect(Math.random()*512, Math.random()*512, 4, 4);
+            }
+        } else if (type === 'skyscraper_glass') {
+            // Procedural Skyscraper Facade (Realistic Blue Glass + Frames)
+            ctx.fillStyle = '#3b82f6'; // Bright daytime glass blue
+            ctx.fillRect(0, 0, 512, 512);
+            ctx.strokeStyle = '#1e293b'; // Steel frames
+            ctx.lineWidth = 8;
+            // Vertical frames
+            for(let i=0; i<=512; i+=32) {
+                ctx.beginPath(); ctx.moveTo(i, 0); ctx.lineTo(i, 512); ctx.stroke();
+            }
+            // Horizontal frames (floors)
+            for(let i=0; i<=512; i+=64) {
+                ctx.beginPath(); ctx.moveTo(0, i); ctx.lineTo(512, i); ctx.stroke();
+                // Sub-frames
+                ctx.lineWidth = 3;
+                ctx.beginPath(); ctx.moveTo(0, i+32); ctx.lineTo(512, i+32); ctx.stroke();
+                ctx.lineWidth = 8;
+            }
+            // Add some reflection gradients
+            const grad = ctx.createLinearGradient(0, 0, 512, 512);
+            grad.addColorStop(0, 'rgba(255,255,255,0.3)'); // Sun glare
+            grad.addColorStop(0.5, 'rgba(56, 189, 248, 0.1)');
+            grad.addColorStop(1, 'rgba(0,0,0,0.15)');
+            ctx.fillStyle = grad;
+            ctx.fillRect(0, 0, 512, 512);
+        }
+        
+        const tex = new THREE.CanvasTexture(c);
+        tex.wrapS = THREE.RepeatWrapping;
+        tex.wrapT = THREE.RepeatWrapping;
+        if(type === 'skyscraper_glass') {
+            tex.repeat.set(4, 12);
+        } else {
+            tex.repeat.set(8, 8);
+        }
+        // Enable Mipmapping for automatic distance-based quality reduction (lag prevention)
+        tex.generateMipmaps = true;
+        tex.minFilter = THREE.LinearMipMapLinearFilter;
+        return tex;
+    }
+
+    const floorTex = createProceduralTexture('floor');
+    const wallTex = createProceduralTexture('wall');
+    const glassTex = createProceduralTexture('skyscraper_glass');
+    
+    const floorMaterial = new THREE.MeshStandardMaterial({ map: floorTex, roughness: 0.2, metalness: 0.1 });
+    const wallMaterial = new THREE.MeshStandardMaterial({ map: wallTex, roughness: 0.9, metalness: 0.2 });
+    const skyscraperMaterial = new THREE.MeshStandardMaterial({ 
+        map: glassTex, 
+        roughness: 0.1, 
+        metalness: 0.8, 
+        color: 0xffffff // White base to let texture shine
+    });
+
+    const animatedMiniMeshes = []; // Rotating machine spindles, NPCs, etc.
+    const interactableMeshes = []; // Physical jars and machine inputs
+    let activeInteriorGroup = new THREE.Group();
+    scene.add(activeInteriorGroup);
+    let currentActiveLot = -1;
+    let instancedHouseBases, instancedHouseRoofs;
+
+    // Dispose helper to prevent lag
+    function disposeHierarchy(node) {
+        if (!node) return;
+        if (node.geometry) node.geometry.dispose();
+        if (node.material) {
+            const disposeMat = (m) => {
+                m.dispose();
+                if (m.map) m.map.dispose(); // CRITICAL FIX: Dispose textures to prevent massive VRAM leaks
+            };
+            if (Array.isArray(node.material)) node.material.forEach(disposeMat);
+            else disposeMat(node.material);
+        }
+        if (node.children) {
+            for (let i = node.children.length - 1; i >= 0; i--) {
+                disposeHierarchy(node.children[i]);
+            }
+        }
+    }
+
+    // Helper to build Detailed Machines Group inside Machine Lab Houses (EVERY Industrial Machine)
+    function buildDetailedMachinesGroup(lotX, lotZ, lotIndex) {
+        const group = new THREE.Group();
+        group.userData.obstacles = [];
+
+        // All Industrial & Laboratory Machines Catalog
+        const machines = [
+            { id: 'SMELTER', name: 'Arc Smelter & Cast', color: 0xf97316 },
+            { id: 'POWDER', name: 'Planetary Ball Mill', color: 0x10b981 },
+            { id: 'PRINTER', name: 'SLS 3D Metal Printer', color: 0x6366f1 },
+            { id: 'CNC', name: '5-Axis CNC Mill', color: 0x38bdf8 },
+            { id: 'REACTOR', name: 'Flow Chem Reactor', color: 0xa855f7 },
+            { id: 'SPS', name: 'Spark Plasma Sinter (SPS)', color: 0xe11d48 },
+            { id: 'CVD', name: 'CVD Thin-Film Chamber', color: 0x06b6d4 },
+            { id: 'HIP', name: 'Hot Isostatic Press (HIP)', color: 0xf59e0b },
+            { id: 'NANOSPIN', name: 'Electrospinning Loom', color: 0x8b5cf6 },
+            { id: 'LITHOGRAPHY', name: 'Electron Beam Lithography', color: 0xec4899 },
+            { id: 'FRACTIONATION', name: 'Gas Cryo-Fractionator', color: 0x3b82f6 },
+            { id: 'AUTOCLAVE', name: 'Hydrothermal Autoclave', color: 0x14b8a6 }
+        ];
+
+        // Lay out in 2 long industrial workstation rows (left: X = -10, right: X = 10)
+        // leaving the central aisle (X = -7 to 7) completely free and walkable
+        const rowLeft = machines.slice(0, 6);
+        const rowRight = machines.slice(6, 12);
+
+        // Add physical collision obstacles for the machinery rows
+        group.userData.obstacles.push({ minX: -13.5, maxX: -6.5, minZ: -16.0, maxZ: 16.0 });
+        group.userData.obstacles.push({ minX: 6.5, maxX: 13.5, minZ: -16.0, maxZ: 16.0 });
+
+        const setupRow = (rowItems, rowX) => {
+            rowItems.forEach((mach, i) => {
+                const mGroup = new THREE.Group();
+                const posZ = -13.5 + i * 5.4;
+                mGroup.position.set(rowX, 0, posZ);
+
+                // Industrial Workstation Pedestal Table
+                const tableGeo = new THREE.BoxGeometry(3.6, 1.2, 3.6);
+                const tableMat = new THREE.MeshStandardMaterial({ color: 0x1e293b, metalness: 0.8, roughness: 0.3 });
+                const table = new THREE.Mesh(tableGeo, tableMat);
+                table.position.y = 0.6;
+                mGroup.add(table);
+
+                // Machine Unit Main Chassis
+                const chassisGeo = new THREE.BoxGeometry(2.4, 2.2, 2.4);
+                const chassisMat = new THREE.MeshStandardMaterial({
+                    color: mach.color,
+                    metalness: 0.75,
+                    roughness: 0.25,
+                    emissive: mach.color,
+                    emissiveIntensity: 0.18
+                });
+                const chassis = new THREE.Mesh(chassisGeo, chassisMat);
+                chassis.position.y = 2.3;
+                mGroup.add(chassis);
+
+                // Machine Diagnostic Screen / Status Display
+                const screenGeo = new THREE.PlaneGeometry(1.2, 0.7);
+                const screenMat = new THREE.MeshBasicMaterial({ color: 0x0284c7 });
+                const screen = new THREE.Mesh(screenGeo, screenMat);
+                screen.position.set(rowX < 0 ? 1.21 : -1.21, 2.4, 0);
+                screen.rotation.y = rowX < 0 ? Math.PI / 2 : -Math.PI / 2;
+                mGroup.add(screen);
+
+                // Floating 3D Title Label
+                const hexColor = '#' + mach.color.toString(16).padStart(6, '0');
+                const lbl = createTextSprite(mach.name, hexColor);
+                lbl.position.set(0, 4.0, 0);
+                mGroup.add(lbl);
+
+                // Proximity & Raycast Interaction Hitbox
+                const hitbox = new THREE.Mesh(new THREE.BoxGeometry(3.2, 3.8, 3.2), new THREE.MeshBasicMaterial({ visible: false }));
+                hitbox.position.y = 2.0;
+                hitbox.userData = { isMachine: true, type: mach.name, machineKey: mach.id };
+                mGroup.add(hitbox);
+                interactableMeshes.push(hitbox);
+
+                group.add(mGroup);
+            });
+        };
+
+        setupRow(rowLeft, -10.0);
+        setupRow(rowRight, 10.0);
+
+        return group;
+    }
+
+    // Helper to create floating text labels above jars
+    function createTextSprite(message, color) {
+        const canvas = document.createElement('canvas');
+        canvas.width = 512; canvas.height = 128; // Widened for full names
+        const ctx = canvas.getContext('2d');
+        ctx.fillStyle = color || '#ffffff';
+        ctx.font = 'bold 36px JetBrains Mono, monospace';
+        ctx.textAlign = 'center';
+        ctx.fillText(message, 256, 80);
+        
+        const texture = new THREE.CanvasTexture(canvas);
+        texture.generateMipmaps = true;
+        texture.minFilter = THREE.LinearMipMapLinearFilter;
+        
+        const spriteMat = new THREE.SpriteMaterial({ map: texture, transparent: true, depthTest: false });
+        const sprite = new THREE.Sprite(spriteMat);
+        sprite.scale.set(3.0, 0.75, 1);
+        return sprite;
+    }
+
+    // Helper to build Infinite Material Storage Vault Racks inside House #2 (Compact & Tightly Packed)
+    function buildMaterialVaultGroup() {
+        const group = new THREE.Group();
+        group.userData.obstacles = [];
+
+        // Partition all database materials by state of matter
+        const solids = MATERIALS_DB.filter(m => m.category === 'Metal' || m.category === 'Semiconductor' || m.category === 'Advanced');
+        const liquids = MATERIALS_DB.filter(m => m.category === 'Chemical');
+        const gases = MATERIALS_DB.filter(m => m.category === 'Gas');
+
+        const floors = 3;
+        for (let floor = 0; floor < floors; floor++) {
+            const floorHeight = floor * 12; // 12 units per floor
+            
+            // Major Category Sign on front wall
+            const catName = floor === 0 ? "FLOOR 1: SOLIDS & METALLURGY" : (floor === 1 ? "FLOOR 2: CHEMICALS & SOLVENTS" : "FLOOR 3: GASES & CRYOGENICS");
+            const catColor = floor === 0 ? "#eab308" : (floor === 1 ? "#38bdf8" : "#a855f7");
+            const floorSign = createTextSprite(catName, catColor);
+            floorSign.position.set(0, floorHeight + 9.5, -15);
+            floorSign.scale.set(10, 2.5, 1);
+            group.add(floorSign);
+            
+            // Floor slab
+            if (floor > 0) {
+                const floorMesh = new THREE.Mesh(new THREE.BoxGeometry(40, 0.5, 40), floorMaterial);
+                floorMesh.position.y = floorHeight;
+                group.add(floorMesh);
+            }
+
+            const floorMats = floor === 0 ? solids : (floor === 1 ? liquids : gases);
+
+            // Two high-density compact shelving rows flanking the central aisle (X = -9.5 and X = 9.5)
+            const rackPositions = [-9.5, 9.5];
+            
+            rackPositions.forEach((rackX, rIdx) => {
+                const rack = new THREE.Group();
+                rack.position.set(rackX, floorHeight, 0);
+                
+                // Add physical obstacle for this rack so player can't walk through it
+                group.userData.obstacles.push({ minX: rackX - 2.8, maxX: rackX + 2.8, minZ: -14.5, maxZ: 14.5 });
+
+                // Frame Posts
+                const framePostGeo = new THREE.BoxGeometry(0.25, 9.5, 0.25);
+                const frameMat = new THREE.MeshStandardMaterial({ color: 0x1e293b, metalness: 0.85, roughness: 0.3 });
+                
+                const p1 = new THREE.Mesh(framePostGeo, frameMat); p1.position.set(-2.5, 4.75, -14.0); rack.add(p1);
+                const p2 = new THREE.Mesh(framePostGeo, frameMat); p2.position.set(2.5, 4.75, -14.0); rack.add(p2);
+                const p3 = new THREE.Mesh(framePostGeo, frameMat); p3.position.set(-2.5, 4.75, 14.0); rack.add(p3);
+                const p4 = new THREE.Mesh(framePostGeo, frameMat); p4.position.set(2.5, 4.75, 14.0); rack.add(p4);
+
+                // 4 Levels per Rack
+                const levels = 4;
+                for (let lvl = 1; lvl <= levels; lvl++) {
+                    const shelf = new THREE.Mesh(new THREE.BoxGeometry(5.2, 0.1, 28.0), new THREE.MeshStandardMaterial({ color: 0x334155, metalness: 0.6 }));
+                    shelf.position.y = lvl * 2.1;
+                    rack.add(shelf);
+                    
+                    // Divide floor materials into compact batches
+                    const itemsPerShelf = Math.ceil(floorMats.length / (2 * levels));
+                    const globalIdx = (rIdx * levels + (lvl - 1)) * itemsPerShelf;
+                    const shelfItems = floorMats.slice(globalIdx, globalIdx + itemsPerShelf);
+                    
+                    shelfItems.forEach((matData, c) => {
+                        // Tightly packed spacing along Z-axis for each material bay
+                        const zStep = itemsPerShelf > 1 ? 24.0 / itemsPerShelf : 0;
+                        const posZ = -12.0 + c * zStep + zStep / 2;
+
+                        // Create exactly 3 distinct physical jars per mineral/material
+                        const JARS_PER_MINERAL = 3;
+                        const jarXOffsets = [-0.75, 0.0, 0.75]; // Placed side by side across the shelf depth
+
+                        for (let jarIdx = 0; jarIdx < JARS_PER_MINERAL; jarIdx++) {
+                            const itemGroup = new THREE.Group();
+                            
+                            // Clear outer jar/flask container
+                            const glassMat = new THREE.MeshStandardMaterial({
+                                color: 0xffffff,
+                                transparent: true,
+                                opacity: 0.28,
+                                roughness: 0.1,
+                                metalness: 0.9
+                            });
+
+                            const coreMat = new THREE.MeshStandardMaterial({
+                                color: matData.color,
+                                emissive: matData.color,
+                                emissiveIntensity: 0.45,
+                                metalness: 0.8,
+                                roughness: 0.25
+                            });
+
+                            let containerMesh, coreMesh;
+
+                            if (matData.category === 'Gas') {
+                                containerMesh = new THREE.Mesh(new THREE.CylinderGeometry(0.22, 0.22, 0.85, 16), glassMat);
+                                coreMesh = new THREE.Mesh(new THREE.SphereGeometry(0.14, 16, 16), coreMat);
+                                const valve = new THREE.Mesh(new THREE.CylinderGeometry(0.05, 0.05, 0.12), new THREE.MeshStandardMaterial({ color: 0x94a3b8, metalness: 0.9 }));
+                                valve.position.y = 0.48;
+                                itemGroup.add(valve);
+                            } else if (matData.category === 'Chemical') {
+                                containerMesh = new THREE.Mesh(new THREE.CylinderGeometry(0.14, 0.28, 0.75, 20), glassMat);
+                                coreMesh = new THREE.Mesh(new THREE.CylinderGeometry(0.12, 0.25, 0.55, 20), coreMat);
+                                coreMesh.position.y = -0.05;
+                                const stopper = new THREE.Mesh(new THREE.CylinderGeometry(0.09, 0.12, 0.1), new THREE.MeshStandardMaterial({ color: 0x0f172a }));
+                                stopper.position.y = 0.40;
+                                itemGroup.add(stopper);
+                            } else {
+                                containerMesh = new THREE.Mesh(new THREE.BoxGeometry(0.5, 0.5, 0.5), glassMat);
+                                coreMesh = new THREE.Mesh(new THREE.DodecahedronGeometry(0.18, 0), coreMat);
+                                coreMesh.rotation.set(Math.random() * Math.PI, Math.random() * Math.PI, 0);
+                            }
+
+                            itemGroup.add(containerMesh);
+                            itemGroup.add(coreMesh);
+
+                            // Position each of the 3 jars on the shelf
+                            itemGroup.position.set(jarXOffsets[jarIdx], lvl * 2.1 + 0.38, posZ);
+
+                            // Floating Full Name & Jar Number Label
+                            const lbl = createTextSprite(`${matData.name} [${jarIdx + 1}/3]`, matData.color);
+                            lbl.position.set(0, 0.75, 0);
+                            lbl.scale.set(1.9, 0.48, 1);
+                            itemGroup.add(lbl);
+
+                            // Hitbox for picking up this individual jar
+                            const hitbox = new THREE.Mesh(new THREE.BoxGeometry(0.7, 1.2, 0.7), new THREE.MeshBasicMaterial({ visible: false }));
+                            hitbox.position.y = 0.2;
+                            hitbox.userData = { isJar: true, material: matData, visualMesh: coreMesh, jarIndex: jarIdx };
+                            itemGroup.add(hitbox);
+                            interactableMeshes.push(hitbox);
+
+                            rack.add(itemGroup);
+                        }
+                    });
+                }
+                group.add(rack);
+            });
+        }
+
+        return group;
+    }
+
+    // Helper to build a persistent Multi-Floor Elevator Cabin at the center back
+    function buildElevatorCabinGroup() {
+        const group = new THREE.Group();
+        group.position.set(0, 0, -16.5);
+
+        // Continuous Elevator Shaft Structure (Runs through all 3 floors, height = 36)
+        const shaftGeo = new THREE.BoxGeometry(7.0, 36.0, 6.0);
+        const shaftMat = new THREE.MeshStandardMaterial({
+            color: 0x0f172a,
+            metalness: 0.85,
+            roughness: 0.3,
+            transparent: true,
+            opacity: 0.6,
+            wireframe: false
+        });
+        const shaft = new THREE.Mesh(shaftGeo, shaftMat);
+        shaft.position.y = 18.0;
+        group.add(shaft);
+
+        // Elevator Shaft Frame Cables / Rails
+        const cableGeo = new THREE.CylinderGeometry(0.05, 0.05, 36.0, 8);
+        const cableMat = new THREE.MeshStandardMaterial({ color: 0x94a3b8, metalness: 0.9 });
+        const c1 = new THREE.Mesh(cableGeo, cableMat); c1.position.set(-2.8, 18.0, -2.5); group.add(c1);
+        const c2 = new THREE.Mesh(cableGeo, cableMat); c2.position.set(2.8, 18.0, -2.5); group.add(c2);
+
+        // Floor Entrance Doorways on each level
+        const floorHeights = [0, 12, 24];
+        floorHeights.forEach((fH, fIdx) => {
+            const doorGeo = new THREE.BoxGeometry(3.6, 7.0, 0.3);
+            const doorMat = new THREE.MeshStandardMaterial({
+                color: 0x38bdf8,
+                emissive: 0x0284c7,
+                emissiveIntensity: 0.25,
+                metalness: 0.9,
+                roughness: 0.2
+            });
+            const door = new THREE.Mesh(doorGeo, doorMat);
+            door.position.set(0, fH + 3.5, 3.0);
+            
+            // Interaction hitbox for the door to board the elevator
+            door.userData = { isElevatorDoor: true, floor: fIdx };
+            interactableMeshes.push(door);
+            group.add(door);
+
+            const floorLbl = createTextSprite(`FLOOR ${fIdx + 1} ELEVATOR`, '#38bdf8');
+            floorLbl.position.set(0, fH + 7.5, 3.2);
+            floorLbl.scale.set(4.0, 1.0, 1.0);
+            group.add(floorLbl);
+        });
+
+        // Physical Moving Elevator Platform / Cabin
+        const cabinGroup = new THREE.Group();
+        cabinGroup.name = "elevatorCabin";
+        cabinGroup.position.set(0, state.elevatorFloor * 12 + 0.1, 0);
+
+        // Cabin Platform
+        const cabPlatform = new THREE.Mesh(new THREE.BoxGeometry(5.8, 0.25, 4.8), new THREE.MeshStandardMaterial({ color: 0x334155, metalness: 0.8 }));
+        cabPlatform.position.y = 0.125;
+        cabinGroup.add(cabPlatform);
+
+        // Cabin Ceiling & Light
+        const cabCeil = new THREE.Mesh(new THREE.BoxGeometry(5.8, 0.25, 4.8), new THREE.MeshStandardMaterial({ color: 0x1e293b, metalness: 0.8 }));
+        cabCeil.position.y = 7.0;
+        cabinGroup.add(cabCeil);
+
+        const cabLight = new THREE.PointLight(0x38bdf8, 1.0, 10);
+        cabLight.position.set(0, 6.5, 0);
+        cabinGroup.add(cabLight);
+
+        // Inside Elevator Controls Sign
+        const ctrlSign = createTextSprite("USE [UP] / [DOWN] KEYS TO TRAVEL", "#38bdf8");
+        ctrlSign.position.set(0, 4.5, -2.2);
+        ctrlSign.scale.set(3.5, 0.8, 1.0);
+        cabinGroup.add(ctrlSign);
+
+        group.add(cabinGroup);
+
+        return group;
+    }
+
+    // Determine house type and owner for any Lot Index
+        function getLotDescriptor(lotIndex) {
+            // Check player's own houses first
+            const myHouse = state.ownedHouses.find(h => h.lotIndex === lotIndex);
+            if (myHouse) {
+                return {
+                    lotIndex,
+                    isMine: true,
+                    ownerId: state.userId,
+                    type: myHouse.type,
+                    title: myHouse.title,
+                    accent: myHouse.type === 'MACHINE_LAB' ? '#6366f1' : (myHouse.type === 'MATERIAL_VAULT' ? '#06b6d4' : '#10b981')
+                };
+            }
+            // Check public multiplayer owned houses
+            if (state.publicHouses[lotIndex]) {
+                const pub = state.publicHouses[lotIndex];
+                return {
+                    lotIndex,
+                    isMine: pub.ownerId === state.userId,
+                    ownerId: pub.ownerId,
+                    type: pub.type || 'RESEARCH_ANNEX',
+                    title: `Lot #${lotIndex}: ${pub.title || 'Player Lab'}`,
+                    accent: '#ef4444'
+                };
+            }
+            // Otherwise, procedurally alternate Machine Labs, Material Vaults, and Expandable Research Plots
+            const mod = ((lotIndex % 3) + 3) % 3;
+            if (mod === 0) {
+                return { lotIndex, isMine: false, ownerId: null, type: 'MACHINE_LAB', title: `Lot #${lotIndex}: Town Machine Lab`, accent: '#22c55e' };
+            } else if (mod === 1) {
+                return { lotIndex, isMine: false, ownerId: null, type: 'MATERIAL_VAULT', title: `Lot #${lotIndex}: Town Material Vault`, accent: '#22c55e' };
+            } else {
+                return { lotIndex, isMine: false, ownerId: null, type: 'EXPANDABLE_PLOT', title: `Lot #${lotIndex}: Available Lab Plot (1,500 Cr)`, accent: '#22c55e' };
+            }
+        }
+
+        // Optimized 4096-House Town Rendering (InstancedMesh)
+    function initInstancedTown() {
+        const townGroup = new THREE.Group();
+        scene.add(townGroup);
+
+        // Ground Plane
+        const groundGeo = new THREE.PlaneGeometry(GRID_SIZE * LOT_SPACING_X, GRID_SIZE * LOT_SPACING_Z);
+        const groundMat = new THREE.MeshStandardMaterial({ color: 0x15803d, roughness: 1.0 }); // Darker grass
+        const ground = new THREE.Mesh(groundGeo, groundMat);
+        ground.rotation.x = -Math.PI / 2;
+        ground.position.set((GRID_SIZE/2)*LOT_SPACING_X - LOT_SPACING_X/2, 0, (GRID_SIZE/2)*LOT_SPACING_Z - LOT_SPACING_Z/2);
+        ground.receiveShadow = true;
+        townGroup.add(ground);
+
+        // Massive Apartment / Skyscraper Bases (Glass Material)
+        const baseGeo = new THREE.BoxGeometry(40, 120, 40);
+        instancedHouseBases = new THREE.InstancedMesh(baseGeo, skyscraperMaterial, TOTAL_HOUSES);
+        instancedHouseBases.castShadow = true;
+        instancedHouseBases.receiveShadow = true;
+        
+        // Emissive thick frame trims for ownership colors
+        const frameGeo = new THREE.BoxGeometry(41, 121, 41);
+        const frameMat = new THREE.MeshStandardMaterial({ 
+            color: 0xffffff, roughness: 0.2, metalness: 0.8, 
+            wireframe: true, wireframeLinewidth: 3, 
+            transparent: true, opacity: 0.9,
+            emissive: 0xffffff, emissiveIntensity: 0.6
+        });
+        instancedHouseRoofs = new THREE.InstancedMesh(frameGeo, frameMat, TOTAL_HOUSES);
+
+        // Ground Level Exterior Doors
+        const doorGeo = new THREE.BoxGeometry(4.0, 6.0, 0.5);
+        const doorMat = new THREE.MeshStandardMaterial({ color: 0x0f172a, roughness: 0.5 });
+        const instancedDoors = new THREE.InstancedMesh(doorGeo, doorMat, TOTAL_HOUSES);
+
+        const dummy = new THREE.Object3D();
+        const doorDummy = new THREE.Object3D();
+
+        for(let z=0; z<GRID_SIZE; z++) {
+            for(let x=0; x<GRID_SIZE; x++) {
+                const i = z * GRID_SIZE + x;
+                
+                // Road paths
+                const roadGeo = new THREE.PlaneGeometry(LOT_SPACING_X, 16);
+                const roadMat = new THREE.MeshStandardMaterial({ color: 0x94a3b8, roughness: 0.9 });
+                const road = new THREE.Mesh(roadGeo, roadMat);
+                road.rotation.x = -Math.PI / 2;
+                road.position.set(x * LOT_SPACING_X, 0.05, z * LOT_SPACING_Z + 25);
+                townGroup.add(road);
+
+                // Base position (Y=60 for height 120)
+                dummy.position.set(x * LOT_SPACING_X, 60, z * LOT_SPACING_Z);
+                dummy.updateMatrix();
+                instancedHouseBases.setMatrixAt(i, dummy.matrix);
+                instancedHouseRoofs.setMatrixAt(i, dummy.matrix);
+
+                // Exterior Front Door Position (Z + 20 puts it on the front wall)
+                doorDummy.position.set(x * LOT_SPACING_X, 3.0, z * LOT_SPACING_Z + 20);
+                doorDummy.updateMatrix();
+                instancedDoors.setMatrixAt(i, doorDummy.matrix);
+            }
+        }
+        townGroup.add(instancedHouseBases);
+        townGroup.add(instancedHouseRoofs);
+        townGroup.add(instancedDoors);
+        updateTownColors();
+    }
+
+        function updateTownColors() {
+            if (!instancedHouseRoofs) return; // Color the frames, not the glass
+            const colorMine = new THREE.Color(0x3b82f6); // Blue
+            const colorOther = new THREE.Color(0xef4444); // Red
+            const colorFree = new THREE.Color(0x22c55e); // Green
+
+            for (let i = 0; i < TOTAL_HOUSES; i++) {
+                const myHouse = state.ownedHouses.find(h => h.lotIndex === i);
+                if (myHouse) {
+                    instancedHouseRoofs.setColorAt(i, colorMine);
+                } else if (state.publicHouses[i]) {
+                    instancedHouseRoofs.setColorAt(i, colorOther);
+                } else {
+                    instancedHouseRoofs.setColorAt(i, colorFree);
+                }
+            }
+            instancedHouseRoofs.instanceColor.needsUpdate = true;
+        }
+
+        function updateActiveInterior() {
+        const currentLotX = Math.max(0, Math.min(GRID_SIZE - 1, Math.round(state.position.x / LOT_SPACING_X)));
+        const currentLotZ = Math.max(0, Math.min(GRID_SIZE - 1, Math.round(state.position.z / LOT_SPACING_Z)));
+        const lotIndex = currentLotZ * GRID_SIZE + currentLotX;
+
+        if (currentActiveLot === lotIndex) return;
+        currentActiveLot = lotIndex;
+        
+        // Clear previous interior & physics
+        disposeHierarchy(activeInteriorGroup);
+        activeInteriorGroup.clear();
+        animatedMiniMeshes.length = 0; 
+        interactableMeshes.length = 0;
+
+        const desc = getLotDescriptor(lotIndex);
+        const centerX = currentLotX * LOT_SPACING_X;
+        const centerZ = currentLotZ * LOT_SPACING_Z;
+        
+        activeInteriorGroup.position.set(centerX, 0, centerZ);
+
+        // Interior Walls & Lighting for Player Visibility inside Instances
+        const wallGeo = new THREE.BoxGeometry(40, 120, 40);
+        const wallMesh = new THREE.Mesh(wallGeo, wallMaterial);
+        wallMesh.material.side = THREE.BackSide; 
+        wallMesh.position.y = 60;
+        activeInteriorGroup.add(wallMesh);
+
+        // Working Interior Doors
+        const intDoor1 = new THREE.Mesh(new THREE.BoxGeometry(2.0, 6.0, 0.4), new THREE.MeshStandardMaterial({ color: 0x1e293b }));
+        intDoor1.position.set(-1.0, 3.0, 19.8);
+        activeInteriorGroup.add(intDoor1);
+        const intDoor2 = new THREE.Mesh(new THREE.BoxGeometry(2.0, 6.0, 0.4), new THREE.MeshStandardMaterial({ color: 0x1e293b }));
+        intDoor2.position.set(1.0, 3.0, 19.8);
+        intDoor2.rotation.y = -Math.PI / 4; // One door slightly open
+        activeInteriorGroup.add(intDoor2);
+
+        const interiorAmbient = new THREE.AmbientLight(0xffffff, 0.4);
+        activeInteriorGroup.add(interiorAmbient);
+        const interiorLight = new THREE.PointLight(0xffffff, 1.2, 120);
+        interiorLight.position.set(0, 15, 0);
+        activeInteriorGroup.add(interiorLight);
+
+        // Massive Apartment Floor Pad
+        const padGeo = new THREE.BoxGeometry(40, 0.2, 40);
+        const pad = new THREE.Mesh(padGeo, floorMaterial);
+        pad.position.y = 0.1;
+        activeInteriorGroup.add(pad);
+
+        // Interior Equipment
+        if (desc.type === 'MACHINE_LAB') {
+            const mGroup = buildDetailedMachinesGroup(0, 0, lotIndex);
+            activeInteriorGroup.userData.obstacles = mGroup.userData.obstacles || []; // Transfer collision hitboxes
+            activeInteriorGroup.add(mGroup); 
+        } else {
+            const vGroup = buildMaterialVaultGroup();
+            activeInteriorGroup.userData.obstacles = vGroup.userData.obstacles || []; // Transfer collision hitboxes
+            activeInteriorGroup.add(vGroup);
+        }
+
+        // Add Multi-Floor Elevator Cabin to all tall building interiors
+        const elevGroup = buildElevatorCabinGroup();
+        activeInteriorGroup.add(elevGroup);
+
+        // Mailbox & AI NPC (Placed just outside the front door)
+        const mailboxGroup = new THREE.Group();
+        mailboxGroup.position.set(12, 0, 22);
+
+            const post = new THREE.Mesh(new THREE.CylinderGeometry(0.12, 0.12, 1.5, 12), new THREE.MeshStandardMaterial({ color: 0x94a3b8, metalness: 0.8 }));
+            post.position.y = 0.75;
+            mailboxGroup.add(post);
+
+            const box = new THREE.Mesh(new THREE.BoxGeometry(1.2, 0.65, 1.4), new THREE.MeshStandardMaterial({ color: 0x2563eb, metalness: 0.5 }));
+            box.position.y = 1.55;
+            mailboxGroup.add(box);
+
+            // AI NPC (7x7x7 Voxel Character)
+            const npcGroup = new THREE.Group();
+            npcGroup.position.set(2.0, 0, 0);
+
+            const npcGeo = new THREE.BoxGeometry(1.6, 1.6, 1.6);
+            const aiVoxelGrid = getPresetGrid('quantum'); 
+            const npcMat = new THREE.MeshStandardMaterial({
+                map: createTextureFrom7x7Grid(aiVoxelGrid),
+                roughness: 0.35, metalness: 0.4
+            });
+            const npcCube = new THREE.Mesh(npcGeo, npcMat);
+            npcCube.position.y = 1.6;
+            npcGroup.add(npcCube);
+
+            const halo = new THREE.Mesh(
+                new THREE.TorusGeometry(1.0, 0.08, 12, 24),
+                new THREE.MeshBasicMaterial({ color: 0x38bdf8 })
+            );
+            halo.rotation.x = Math.PI / 2;
+            halo.position.y = 2.8;
+            npcGroup.add(halo);
+            animatedMiniMeshes.push({ mesh: npcGroup, type: 'bobY', baseY: 0 });
+
+            mailboxGroup.add(npcGroup);
+            activeInteriorGroup.add(mailboxGroup);
+        }
+
+        // ---------------------------------------------------------------------
+        // 6. REAL SCIENTIFIC EQUATIONS & FABRICATION ENGINE
+        // ---------------------------------------------------------------------
+        function getSelectedMaterialsWithData() {
+            if (!state.selectedFeedstock || state.selectedFeedstock.length === 0) return [];
+            // Normalize percentages to 100%
+            const totalPct = state.selectedFeedstock.reduce((acc, item) => acc + Number(item.weightPct || 0), 0) || 100;
+            return state.selectedFeedstock.map(item => {
+                const mat = MATERIALS_DB.find(m => m.id === item.id) || MATERIALS_DB[0];
+                const normWeightFrac = (Number(item.weightPct || 0)) / totalPct;
+                return { ...mat, weightFrac: normWeightFrac, weightPct: Math.round(normWeightFrac * 100) };
+            });
+        }
+
+        function computeScientificMetrics() {
+            const list = getSelectedMaterialsWithData();
+            const massKg = Math.max(0.1, Number(document.getElementById('wb-total-mass')?.value || 5.0));
+
+            // 1. Harmonic Rule of Mixtures for Alloy/Composite Density: 1 / Σ(w_i / ρ_i)
+            let invDensitySum = 0;
+            list.forEach(m => { invDensitySum += (m.weightFrac / m.density); });
+            const baseDensity = 1 / (invDensitySum || 1);
+
+            // Volume fractions V_i = (w_i / ρ_i) * ρ_mix
+            let effModulusGPa = 0;
+            let effYieldMPa = 0;
+            let effMeltingC = 0;
+            let effThermalW = 0;
+            let effSpecHeat = 0;
+            let effLatentHeat = 0;
+            let effWorkIndex = 0;
+            let rawCostPerKg = 0;
+
+            list.forEach(m => {
+                const volFrac = (m.weightFrac / m.density) * baseDensity;
+                effModulusGPa += volFrac * m.modulusGPa;
+                effYieldMPa += volFrac * m.yieldMPa;
+                effMeltingC += m.weightFrac * m.meltC;
+                effThermalW += volFrac * m.thermalW;
+                effSpecHeat += m.weightFrac * m.specHeat;
+                effLatentHeat += m.weightFrac * m.latentHeat;
+                effWorkIndex += m.weightFrac * m.workIndex;
+                rawCostPerKg += m.weightFrac * m.baseCost;
+            });
+
+            // Machine-specific physics equations
+            const mp = state.machineParams;
+            let equationsHtml = '';
+            let precisionUm = 15.0;
+            let processFeasible = true;
+            let statusNote = 'OPTIMAL PARAMETERS';
+
+            if (state.activeMachine === 'SMELTER') {
+                // Q = m * c * ΔT + m * L_f
+                const deltaT = Math.max(0, mp.furnaceTempC - 25);
+                const sensibleHeatKJ = (massKg * effSpecHeat * deltaT) / 1000;
+                const latentKJ = massKg * effLatentHeat;
+                const totalThermalMJ = (sensibleHeatKJ + latentKJ) / 1000;
+                const isMelted = mp.furnaceTempC >= effMeltingC * 0.85;
+                processFeasible = isMelted;
+                statusNote = isMelted ? 'LIQUIDUS PHASE ACHIEVED' : 'BELOW LIQUIDUS TEMP';
+                if (isMelted) {
+                    effYieldMPa *= 1.15; // Grain homogenization boost
+                }
+                equationsHtml = `
+                    <div class="text-amber-300 font-bold">1. Thermodynamic Enthalpy of Fusion: Q = m·c_p·ΔT + m·L_f</div>
+                    <div>• Sensible Heat (m·c_p·ΔT): <span class="text-sky-300">${sensibleHeatKJ.toFixed(1)} kJ</span> | Latent Fusion (m·L_f): <span class="text-sky-300">${latentKJ.toFixed(1)} kJ</span></div>
+                    <div>• Total Arc Energy Input: <span class="text-emerald-300 font-bold">${totalThermalMJ.toFixed(3)} MJ</span> (${(totalThermalMJ * 0.2778).toFixed(2)} kWh)</div>
+                    <div class="text-amber-300 font-bold mt-1">2. Harmonic Alloy Density & Voigt Modulus: ρ_mix = 1 / Σ(w_i/ρ_i)</div>
+                    <div>• Furnace Temp: <span class="text-white">${mp.furnaceTempC} °C</span> vs Liquidus Threshold: <span class="text-white">${Math.round(effMeltingC)} °C</span></div>
+                `;
+            } else if (state.activeMachine === 'POWDER') {
+                // Bond's Law: W = 10 * Wi * (1/sqrt(P80) - 1/sqrt(F80))
+                const F80 = mp.feedSizeUm;
+                const reductionFactor = Math.max(5, (mp.millRpm / 100) * (mp.millMinutes / 15));
+                const P80 = Math.max(2.5, F80 / reductionFactor);
+                const bondWorkKWhTon = 10 * effWorkIndex * ((1 / Math.sqrt(P80)) - (1 / Math.sqrt(F80)));
+                precisionUm = P80;
+                // Hall-Petch strengthening: σ_y = σ_0 + k_y / sqrt(d)
+                const hallPetchBoost = 120 / Math.sqrt(P80);
+                effYieldMPa += hallPetchBoost;
+
+                equationsHtml = `
+                    <div class="text-emerald-300 font-bold">1. Bond's Comminution Work Law: W = 10·W_i·(1/√P₈₀ − 1/√F₈₀)</div>
+                    <div>• Feed Size (F₈₀): <span class="text-sky-300">${F80} μm</span> → Milled Powder Size (P₈₀): <span class="text-emerald-300 font-bold">${P80.toFixed(2)} μm</span></div>
+                    <div>• Specific Grinding Energy: <span class="text-amber-300">${bondWorkKWhTon.toFixed(2)} kWh/t</span> (Work Index W_i = ${effWorkIndex.toFixed(1)})</div>
+                    <div class="text-emerald-300 font-bold mt-1">2. Hall-Petch Grain Boundary Strengthening: Δσ_y = k_y / √d</div>
+                    <div>• Fine Powder Yield Strength Gain: <span class="text-emerald-300">+${hallPetchBoost.toFixed(1)} MPa</span></div>
+                `;
+            } else if (state.activeMachine === 'PRINTER') {
+                // Volumetric Energy Density: Ev = P / (v * h * t)
+                const hMm = 0.1; // hatch spacing 100 um
+                const tMm = mp.layerThicknessUm / 1000;
+                const Ev = mp.laserPowerW / (mp.scanSpeedMmS * hMm * tMm);
+                // Relative density peaks near optimal Ev (~65-110 J/mm3)
+                const relDensityPct = Math.min(99.95, Math.max(78.0, 100 - Math.abs(Ev - 85) * 0.09));
+                precisionUm = mp.layerThicknessUm * 0.35;
+                effModulusGPa *= (relDensityPct / 100);
+                effYieldMPa *= (relDensityPct / 100) * 1.18;
+
+                equationsHtml = `
+                    <div class="text-indigo-300 font-bold">1. Laser Volumetric Energy Density: E_v = P / (v · h · t)</div>
+                    <div>• Laser Power (P): <span class="text-sky-300">${mp.laserPowerW} W</span> | Scan Speed (v): <span class="text-sky-300">${mp.scanSpeedMmS} mm/s</span></div>
+                    <div>• Volumetric Energy (E_v): <span class="text-emerald-300 font-bold">${Ev.toFixed(1)} J/mm³</span></div>
+                    <div class="text-indigo-300 font-bold mt-1">2. Sintering Densification Kinetics: ρ_rel = f(E_v, T_m)</div>
+                    <div>• Relative Part Density: <span class="text-amber-300 font-bold">${relDensityPct.toFixed(2)}%</span> | Layer Resolution: <span class="text-white">±${precisionUm.toFixed(1)} μm</span></div>
+                `;
+            } else if (state.activeMachine === 'CNC') {
+                // Material Removal Rate: MRR = d * w * f
+                const widthMm = 4.0;
+                const mrrMm3Min = mp.cutDepthMm * widthMm * mp.feedRateMmMin;
+                // Surface roughness Ra ~ f^2 / (32 * R * rpm^2)
+                const feedPerTooth = mp.feedRateMmMin / (4 * mp.spindleRpm);
+                const surfaceRaUm = Math.max(0.4, (feedPerTooth * feedPerTooth * 1000) / 0.08);
+                precisionUm = surfaceRaUm;
+                effYieldMPa *= 1.12; // Stress-relieved billet finish
+
+                equationsHtml = `
+                    <div class="text-sky-300 font-bold">1. Subtractive Material Removal Rate: MRR = d · w · f_m</div>
+                    <div>• Axial Depth (d): <span class="text-white">${mp.cutDepthMm} mm</span> | Feed Rate (f_m): <span class="text-white">${mp.feedRateMmMin} mm/min</span></div>
+                    <div>• Removal Rate (MRR): <span class="text-emerald-300 font-bold">${(mrrMm3Min / 1000).toFixed(2)} cm³/min</span> @ ${mp.spindleRpm} RPM</div>
+                    <div class="text-sky-300 font-bold mt-1">2. Kinematic Surface Finish: R_a ≈ f_z² / (8 · r_ε)</div>
+                    <div>• Achieved Surface Roughness (R_a): <span class="text-amber-300 font-bold">±${surfaceRaUm.toFixed(2)} μm</span></div>
+                `;
+            } else if (state.activeMachine === 'REACTOR') {
+                // Arrhenius Rate & Gibbs Free Energy Synthesis
+                const rateMultiplier = 1 + (mp.pressureBar / 50) + (mp.catalystRatio / 25);
+                const enthalpyDeltaH = -142.5 * rateMultiplier;
+                precisionUm = 1.8;
+                effModulusGPa *= (1 + mp.catalystRatio * 0.012);
+                effYieldMPa *= (1 + mp.pressureBar * 0.006);
+
+                equationsHtml = `
+                    <div class="text-purple-300 font-bold">1. Isobaric Chemical Synthesis & Cross-Linking: k = A·exp(−E_a / R·T)</div>
+                    <div>• Reactor Vessel Pressure: <span class="text-sky-300">${mp.pressureBar} bar</span> | Catalyst Loading: <span class="text-sky-300">${mp.catalystRatio}%</span></div>
+                    <div>• Reaction Enthalpy (ΔH_rxn): <span class="text-emerald-300 font-bold">${enthalpyDeltaH.toFixed(1)} kJ/mol (Exothermic)</span></div>
+                    <div class="text-purple-300 font-bold mt-1">2. Molecular Cross-Link Reinforcement Factor: ×${rateMultiplier.toFixed(2)}</div>
+                `;
+            } else if (state.activeMachine === 'SPS') {
+                // Spark Plasma Sintering (Pulsed DC Current + Axial Pressure)
+                const currentKA = 2.4;
+                const jouleHeatKW = currentKA * currentKA * 0.45;
+                effYieldMPa *= 1.35;
+                effModulusGPa *= 1.25;
+                precisionUm = 1.1;
+                equationsHtml = `
+                    <div class="text-rose-400 font-bold">1. Spark Plasma Sintering Joule Dissipation: P = I²·R_contact</div>
+                    <div>• Pulsed DC Current: <span class="text-white">${currentKA} kA</span> | Joule Thermal Input: <span class="text-emerald-300 font-bold">${jouleHeatKW.toFixed(2)} kW</span></div>
+                    <div>• Electric Field Enhanced Diffusion: Grain boundary sliding minimized</div>
+                `;
+            } else if (state.activeMachine === 'CVD') {
+                // Chemical Vapor Deposition (Langmuir-Hinshelwood Kinetics)
+                precisionUm = 0.05; // 50 nanometers
+                effYieldMPa *= 1.45;
+                equationsHtml = `
+                    <div class="text-cyan-300 font-bold">1. Heterogeneous Surface Adsorption & Film Growth: R_dep = k₀·P_react / (1 + K_ads·P)</div>
+                    <div>• Chamber Pressure: <span class="text-white">10⁻⁴ mbar</span> | Deposition Rate: <span class="text-emerald-300 font-bold">2.4 nm/min</span></div>
+                    <div>• Atomic Monolayer Precision: <span class="text-amber-300 font-bold">±${precisionUm} μm</span></div>
+                `;
+            } else if (state.activeMachine === 'HIP') {
+                // Hot Isostatic Press (Argon Gas at 2000 Bar)
+                effModulusGPa *= 1.30;
+                effYieldMPa *= 1.40;
+                precisionUm = 0.8;
+                equationsHtml = `
+                    <div class="text-amber-400 font-bold">1. Isostatic Creep Closure of Microvoids: dV/dt = -A·(σ_eff)^n·exp(-Q/RT)</div>
+                    <div>• Uniform Hydrostatic Pressure: <span class="text-white">2000 bar Ar</span> @ 1250 °C</div>
+                    <div>• Theoretical Density Achieved: <span class="text-emerald-300 font-bold">99.98%</span> (Full Consolidation)</div>
+                `;
+            } else if (state.activeMachine === 'NANOSPIN') {
+                // Electrospinning (Taylor Cone Formation)
+                precisionUm = 0.15;
+                effYieldMPa *= 1.50;
+                equationsHtml = `
+                    <div class="text-violet-400 font-bold">1. Electrostatic Taylor Cone Instability: V_crit = ln(4H/L)·√(γ·R/ε₀)</div>
+                    <div>• Applied High Voltage: <span class="text-white">28 kV</span> | Nanofiber Diameter: <span class="text-emerald-300 font-bold">85 nm</span></div>
+                    <div>• Anisotropic Tensile Alignment: <span class="text-amber-300 font-bold">σ_aligned = ×1.50</span></div>
+                `;
+            } else if (state.activeMachine === 'LITHOGRAPHY') {
+                // Electron Beam Lithography (Bethe Stopping Power)
+                precisionUm = 0.01; // 10 nm
+                equationsHtml = `
+                    <div class="text-pink-400 font-bold">1. Electron Beam Exposure Dose: D = I_beam · t / Area</div>
+                    <div>• Beam Acceleration Voltage: <span class="text-white">100 keV</span> | Sub-10nm Resolution</div>
+                    <div>• Nanopattern Tolerance: <span class="text-emerald-300 font-bold">±${precisionUm} μm</span></div>
+                `;
+            } else if (state.activeMachine === 'FRACTIONATION') {
+                // Cryogenic Distillation Column (McCabe-Thiele Equilibrium)
+                equationsHtml = `
+                    <div class="text-blue-400 font-bold">1. Multi-Stage Cryogenic Gas Rectification: y = α·x / (1 + (α-1)·x)</div>
+                    <div>• Relative Volatility: <span class="text-white">α = P_A* / P_B*</span> | Separation Purity: <span class="text-emerald-300 font-bold">99.999%</span></div>
+                `;
+            } else if (state.activeMachine === 'AUTOCLAVE') {
+                // Hydrothermal Crystal Synthesis
+                precisionUm = 0.4;
+                effModulusGPa *= 1.2;
+                equationsHtml = `
+                    <div class="text-teal-400 font-bold">1. Supercritical Aqueous Solubility Gradient: ΔS = f(ΔT, P_sat)</div>
+                    <div>• Crystal Nucleation & Epitaxial Growth Rate: <span class="text-emerald-300 font-bold">1.2 mm/day</span></div>
+                `;
+            }
+
+            // Apply cumulative multi-stage pipeline bonuses
+            const stageBonus = 1 + (state.pipelineStages.length * 0.14);
+            effYieldMPa *= stageBonus;
+            effModulusGPa *= (1 + state.pipelineStages.length * 0.08);
+            precisionUm = Math.max(0.25, precisionUm / (1 + state.pipelineStages.length * 0.35));
+
+            // Calculate fair scientific base valuation
+            const valueScore = Math.round(
+                (massKg * rawCostPerKg * 1.4) +
+                (effYieldMPa * 0.45) +
+                (effModulusGPa * 1.1) +
+                (effThermalW * 0.25) +
+                (1200 / (precisionUm + 1)) +
+                (state.pipelineStages.length * 220)
+            );
+
+            return {
+                list,
+                massKg,
+                density: baseDensity,
+                modulusGPa: effModulusGPa,
+                yieldMPa: effYieldMPa,
+                meltingC: effMeltingC,
+                thermalW: effThermalW,
+                precisionUm,
+                equationsHtml,
+                processFeasible,
+                statusNote,
+                valueScore
+            };
+        }
+
+        // ---------------------------------------------------------------------
+        // 7. WORKBENCH & MATERIAL VAULT UI RENDERING
+        // ---------------------------------------------------------------------
+        window.filterMaterials = (cat) => {};
+        window.toggleFeedstockMaterial = (matId) => {};
+        window.selectMachine = (machineKey) => { state.activeMachine = machineKey; };
+        window.updateFeedstockRatio = (idx, val) => {};
+        window.updateMachineParam = (key, val) => {};
+        window.recalculateWorkbench = () => {};
+        window.applyMachineStage = () => {};
+        window.resetPipelineStages = () => {};
+        window.finalizeCraftedProject = () => {};
+
+        // ---------------------------------------------------------------------
+        // 8. MAILBOX AI APPRAISER & TRADER (GEMINI API + SCIENTIFIC FALLBACK)
+        // ---------------------------------------------------------------------
+        function renderAppraiserModal() {
+            const listEl = document.getElementById('appraiser-item-list');
+            if (state.craftedInventory.length === 0) {
+                listEl.innerHTML = `<div class="p-4 text-xs text-slate-400 bg-slate-900 rounded-xl border border-slate-800">No crafted projects in inventory. Visit House #1 (Machine Lab) to fabricate an item first!</div>`;
+                document.getElementById('appraiser-selected-preview').classList.add('hidden');
+                return;
+            }
+
+            if (!state.selectedAppraisalItemId || !state.craftedInventory.some(i => i.id === state.selectedAppraisalItemId)) {
+                state.selectedAppraisalItemId = state.craftedInventory[0].id;
+            }
+
+            listEl.innerHTML = state.craftedInventory.map(item => {
+                const selected = item.id === state.selectedAppraisalItemId;
+                return `
+                    <div onclick="window.selectItemForAppraisal('${item.id}')" class="p-3 rounded-xl border cursor-pointer transition ${selected ? 'bg-amber-500/15 border-amber-400' : 'bg-slate-900/80 border-slate-800 hover:border-slate-700'}">
+                        <div class="flex items-center justify-between">
+                            <span class="font-bold text-xs text-white">${item.name}</span>
+                            <span class="text-[11px] font-mono text-amber-300">~${item.scientificValueEstimate} Cr</span>
+                        </div>
+                        <div class="text-[11px] text-slate-400 mt-1 truncate">${item.composition}</div>
+                        <div class="flex gap-2 mt-1.5 text-[10px] font-mono text-sky-300">
+                            <span>σ_y: ${item.yieldMPa}MPa</span>
+                            <span>E: ${item.modulusGPa}GPa</span>
+                            <span>±${item.toleranceUm}μm</span>
+                        </div>
+                    </div>
+                `;
+            }).join('');
+
+            const activeItem = state.craftedInventory.find(i => i.id === state.selectedAppraisalItemId);
+            const previewEl = document.getElementById('appraiser-selected-preview');
+            if (activeItem) {
+                previewEl.classList.remove('hidden');
+                previewEl.innerHTML = `
+                    <div class="text-sky-300 font-bold">${activeItem.name} (${activeItem.massKg} kg)</div>
+                    <div class="text-slate-300">Composition: ${activeItem.composition}</div>
+                    <div class="grid grid-cols-3 gap-2 pt-1 text-slate-400">
+                        <span>Density: <strong class="text-white">${activeItem.density} g/cm³</strong></span>
+                        <span>Modulus: <strong class="text-white">${activeItem.modulusGPa} GPa</strong></span>
+                        <span>Yield: <strong class="text-white">${activeItem.yieldMPa} MPa</strong></span>
+                        <span>Melting: <strong class="text-white">${activeItem.meltingC} °C</strong></span>
+                        <span>Thermal: <strong class="text-white">${activeItem.thermalW} W/mK</strong></span>
+                        <span>Tolerance: <strong class="text-white">±${activeItem.toleranceUm} μm</strong></span>
+                    </div>
+                    <div class="text-indigo-300 pt-1">Process History: ${activeItem.stages.join(' → ')}</div>
+                `;
+            }
+        }
+
+        window.selectItemForAppraisal = (id) => {
+            state.selectedAppraisalItemId = id;
+            document.getElementById('ai-offer-box').classList.add('hidden');
+            renderAppraiserModal();
+        };
+
+        window.openAppraiserFromAnywhere = () => {
+            renderAppraiserModal();
+            window.openModal('appraiser-modal');
+        };
+
+        // Call Gemini API (gemini-3-flash-preview) with Structured JSON Schema & Exponential Backoff
+        window.evaluateItemWithGemini = async () => {
+            const item = state.craftedInventory.find(i => i.id === state.selectedAppraisalItemId);
+            if (!item) {
+                showToast('No Project Selected', 'Fabricate or select a project first.', 'warn');
+                return;
+            }
+
+            const pitch = document.getElementById('appraiser-pitch').value.trim();
+            const loadingEl = document.getElementById('ai-loading-indicator');
+            const btnEl = document.getElementById('btn-run-appraisal');
+            loadingEl.classList.remove('hidden');
+            btnEl.disabled = true;
+
+            const systemPrompt = "You are Dr. Maxwell-7, a witty, rigorous materials scientist and industrial AI appraiser standing by the house mailbox in SciTown. Evaluate the player's engineered item based on its real material properties (Density, Young's Modulus, Yield Strength, Melting Point, Thermal Conductivity, Micron Tolerance, and Manufacturing Stages). Respond in JSON with 'scientificCritique' (2-3 engaging sentences citing specific numbers from their telemetry), 'qualityTier' (e.g. 'Aerospace S-Tier', 'Research A-Tier', 'Industrial B-Tier'), and 'offeredCredits' (integer between 350 and 4500 based on technical merit).";
+
+            const userQuery = `Appraise this player-engineered project:
+            Name: ${item.name}
+            Archetype: ${item.archetype}
+            Composition: ${item.composition}
+            Mass: ${item.massKg} kg
+            Density: ${item.density} g/cm3
+            Young's Modulus: ${item.modulusGPa} GPa
+            Yield Strength: ${item.yieldMPa} MPa
+            Melting Point: ${item.meltingC} C
+            Thermal Conductivity: ${item.thermalW} W/mK
+            Machining Tolerance: ±${item.toleranceUm} microns
+            Manufacturing Pipeline: ${item.stages.join(' -> ')}
+            Baseline Formula Valuation: ${item.scientificValueEstimate} Credits
+            Scientist Pitch Note: ${pitch || 'Standard industrial submission'}`;
+
+            const apiKey = "";
+            const apiUrl = `https://generativelanguage.googleapis.com/v1beta/models/gemini-3-flash-preview:generateContent?key=${apiKey}`;
+
+            const payload = {
+                contents: [{ parts: [{ text: userQuery }] }],
+                systemInstruction: { parts: [{ text: systemPrompt }] },
+                generationConfig: {
+                    responseMimeType: "application/json",
+                    responseSchema: {
+                        type: "OBJECT",
+                        properties: {
+                            scientificCritique: { type: "STRING" },
+                            qualityTier: { type: "STRING" },
+                            offeredCredits: { type: "INTEGER" }
+                        },
+                        propertyOrdering: ["scientificCritique", "qualityTier", "offeredCredits"]
+                    }
+                }
+            };
+
+            let evaluationResult = null;
+            const delays = [1000, 2000, 4000];
+
+            for (let attempt = 0; attempt <= delays.length; attempt++) {
+                try {
+                    const response = await fetch(apiUrl, {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify(payload)
+                    });
+                    if (response.ok) {
+                        const data = await response.json();
+                        const rawText = data?.candidates?.[0]?.content?.parts?.[0]?.text;
+                        if (rawText) {
+                            evaluationResult = JSON.parse(rawText);
+                            break;
+                        }
+                    }
+                } catch (e) {
+                    // Retry silently per instructions
+                }
+                if (attempt < delays.length) {
+                    await new Promise(r => setTimeout(r, delays[attempt]));
+                }
+            }
+
+            // Deterministic Physics Fallback if offline or API key empty
+            if (!evaluationResult) {
+                const bonusMultiplier = 1.05 + (Math.random() * 0.18);
+                const finalCr = Math.round(item.scientificValueEstimate * bonusMultiplier);
+                const tier = finalCr > 1800 ? 'Quantum / Aerospace S-Tier' : (finalCr > 950 ? 'High-Precision A-Tier' : 'Industrial Grade B-Tier');
+                evaluationResult = {
+                    scientificCritique: `Impressive metallurgy on "${item.name}"! Combining ${item.composition} via ${item.stages.length} processing stage(s) yielded an effective Young's modulus of ${item.modulusGPa} GPa, a yield strength of ${item.yieldMPa} MPa, and a tight ±${item.toleranceUm} μm tolerance. Our town's research sector will gladly acquire this unit!`,
+                    qualityTier: tier,
+                    offeredCredits: finalCr
+                };
+            }
+
+            loadingEl.classList.add('hidden');
+            btnEl.disabled = false;
+
+            state.lastAiOffer = {
+                itemId: item.id,
+                credits: evaluationResult.offeredCredits
+            };
+
+            document.getElementById('ai-dialogue-text').innerHTML = `"${evaluationResult.scientificCritique}"`;
+            document.getElementById('ai-offer-amount').textContent = `${evaluationResult.offeredCredits.toLocaleString()} Cr`;
+            document.getElementById('ai-tier-rating').textContent = `Classification: ${evaluationResult.qualityTier}`;
+            document.getElementById('ai-offer-box').classList.remove('hidden');
+        };
+
+        window.sellSelectedToAI = () => {
+            if (!state.lastAiOffer) return;
+            const idx = state.craftedInventory.findIndex(i => i.id === state.lastAiOffer.itemId);
+            if (idx < 0) return;
+
+            const soldItem = state.craftedInventory[idx];
+            const payout = state.lastAiOffer.credits;
+            state.craftedInventory.splice(idx, 1);
+            state.credits += payout;
+            state.lastAiOffer = null;
+
+            document.getElementById('ai-offer-box').classList.add('hidden');
+            updateHudCounters();
+            renderAppraiserModal();
+            syncPlayerPresenceToCloud();
+            showToast('Sold to Mailbox AI Trader!', `Earned +${payout.toLocaleString()} Cr for "${soldItem.name}". You can use profits to buy up to 4 houses!`, 'success');
+        };
+
+        // ---------------------------------------------------------------------
+        // 9. INVENTORY, TELEPORTATION & 4-HOUSE PROPERTY SYSTEM
+        // ---------------------------------------------------------------------
+        function updateHudCounters() {
+            document.getElementById('hud-credits').textContent = state.credits.toLocaleString();
+            document.getElementById('hud-houses').textContent = `${state.ownedHouses.length}/4`;
+            
+            const pCount = document.getElementById('hud-project-count');
+            if(pCount) pCount.textContent = state.craftedInventory.length;
+            
+            const mCount = document.getElementById('modal-house-count');
+            if(mCount) mCount.textContent = state.ownedHouses.length;
+
+            // Render Left Sidebar Estate List
+            const estateEl = document.getElementById('owned-houses-list');
+            estateEl.innerHTML = state.ownedHouses.map((h, i) => `
+                <div class="flex items-center justify-between bg-slate-900/90 px-2.5 py-1.5 rounded-lg border border-slate-800">
+                    <div class="truncate pr-2">
+                        <div class="font-semibold text-white text-[11px] truncate">${h.title}</div>
+                        <div class="font-mono text-[10px] text-sky-400">Lot #${h.lotIndex} (X: ${h.lotIndex * LOT_SPACING_X}m)</div>
+                    </div>
+                    <button onclick="window.teleportToLot(${h.lotIndex})" class="bg-sky-500/20 hover:bg-sky-500/40 text-sky-300 px-2 py-1 rounded text-[10px] font-mono shrink-0">
+                        Warp
+                    </button>
+                </div>
+            `).join('');
+        }
+
+        function renderInventoryModal() {
+            const grid = document.getElementById('inventory-grid');
+            if (state.craftedInventory.length === 0) {
+                grid.innerHTML = `<div class="col-span-2 p-6 text-center text-slate-400 text-xs">Your engineered project inventory is empty. Use the Machine Lab (House #1) to fabricate high-tech items!</div>`;
+                return;
+            }
+            grid.innerHTML = state.craftedInventory.map(item => `
+                <div class="bg-slate-900/90 border border-slate-800 rounded-xl p-4 flex flex-col justify-between gap-3">
+                    <div>
+                        <div class="flex items-center justify-between gap-2">
+                            <h4 class="font-bold text-sm text-white">${item.name}</h4>
+                            <span class="font-mono text-xs text-amber-300 bg-amber-500/10 px-2 py-0.5 rounded border border-amber-500/30">~${item.scientificValueEstimate} Cr</span>
+                        </div>
+                        <p class="text-xs text-slate-400 mt-1">${item.composition}</p>
+                        <div class="grid grid-cols-3 gap-1.5 text-[11px] font-mono bg-slate-950 p-2.5 rounded-lg border border-slate-800 mt-2.5">
+                            <div><span class="text-slate-500">Mass:</span> ${item.massKg}kg</div>
+                            <div><span class="text-slate-500">ρ:</span> ${item.density}g/cm³</div>
+                            <div><span class="text-slate-500">E:</span> ${item.modulusGPa}GPa</div>
+                            <div><span class="text-slate-500">σ_y:</span> ${item.yieldMPa}MPa</div>
+                            <div><span class="text-slate-500">T_m:</span> ${item.meltingC}°C</div>
+                            <div><span class="text-slate-500">Tol:</span> ±${item.toleranceUm}μm</div>
+                        </div>
+                    </div>
+                    <div class="flex items-center justify-between pt-2 border-t border-slate-800">
+                        <span class="text-[10px] font-mono text-indigo-300 truncate max-w-[180px]">${item.stages.join(' → ')}</span>
+                        <button onclick="window.closeModal('inventory-modal'); window.selectItemForAppraisal('${item.id}'); window.openModal('appraiser-modal');" class="bg-amber-500 hover:bg-amber-400 text-slate-950 font-bold text-xs px-3 py-1.5 rounded-lg">
+                            <i class="fa-solid fa-robot mr-1"></i> Appraise & Sell
+                        </button>
+                    </div>
+                </div>
+            `).join('');
+        }
+
+        function renderTeleportModal() {
+            updateHudCounters();
+            const expContainer = document.getElementById('estate-expansion-cards');
+            const house3Owned = state.ownedHouses.length >= 3;
+            const house4Owned = state.ownedHouses.length >= 4;
+            const nextLot3 = state.homeBaseLot + 2;
+            const nextLot4 = state.homeBaseLot + 3;
+
+            expContainer.innerHTML = `
+                <div class="bg-slate-950/90 p-3.5 rounded-xl border ${house3Owned ? 'border-emerald-500/50' : 'border-slate-800'} flex flex-col justify-between gap-2">
+                    <div>
+                        <div class="flex justify-between items-center">
+                            <span class="font-bold text-xs text-white">House Slot #3: Advanced Fabrication Annex</span>
+                            <span class="text-xs font-mono ${house3Owned ? 'text-emerald-400' : 'text-amber-300'}">${house3Owned ? 'OWNED' : '1,500 Cr'}</span>
+                        </div>
+                        <p class="text-[11px] text-slate-400 mt-1">Located at Lot #${nextLot3}. Expands your private lab capacity along Science Avenue.</p>
+                    </div>
+                    ${house3Owned
+                        ? `<button onclick="window.teleportToLot(${nextLot3}); window.closeModal('teleport-modal');" class="bg-emerald-600/30 border border-emerald-500/40 text-emerald-200 text-xs py-1.5 rounded-lg font-semibold">Teleport to House #3</button>`
+                        : `<button onclick="window.buyAdditionalHouse(3, ${nextLot3}, 1500)" class="bg-amber-500 hover:bg-amber-400 text-slate-950 text-xs py-1.5 rounded-lg font-bold">Purchase House #3 (1,500 Cr)</button>`
+                    }
+                </div>
+                <div class="bg-slate-950/90 p-3.5 rounded-xl border ${house4Owned ? 'border-emerald-500/50' : 'border-slate-800'} flex flex-col justify-between gap-2">
+                    <div>
+                        <div class="flex justify-between items-center">
+                            <span class="font-bold text-xs text-white">House Slot #4: Quantum Showcase & Vault</span>
+                            <span class="text-xs font-mono ${house4Owned ? 'text-emerald-400' : 'text-amber-300'}">${house4Owned ? 'OWNED' : '2,500 Cr'}</span>
+                        </div>
+                        <p class="text-[11px] text-slate-400 mt-1">Located at Lot #${nextLot4}. Maximum 4/4 player property cap.</p>
+                    </div>
+                    ${house4Owned
+                        ? `<button onclick="window.teleportToLot(${nextLot4}); window.closeModal('teleport-modal');" class="bg-emerald-600/30 border border-emerald-500/40 text-emerald-200 text-xs py-1.5 rounded-lg font-semibold">Teleport to House #4</button>`
+                        : `<button onclick="window.buyAdditionalHouse(4, ${nextLot4}, 2500)" class="bg-amber-500 hover:bg-amber-400 text-slate-950 text-xs py-1.5 rounded-lg font-bold">Purchase House #4 (2,500 Cr)</button>`
+                    }
+                </div>
+            `;
+
+            // Draw Interactive 64x64 Map
+            const canvas = document.getElementById('teleport-map-canvas');
+            if (canvas) {
+                const ctx = canvas.getContext('2d');
+                const cellSize = 512 / 64; // 8px per lot
+                ctx.clearRect(0, 0, 512, 512);
+
+                for (let z = 0; z < 64; z++) {
+                    for (let x = 0; x < 64; x++) {
+                        const i = z * 64 + x;
+                        if (state.ownedHouses.find(h => h.lotIndex === i)) {
+                            ctx.fillStyle = '#3b82f6'; // Blue
+                        } else if (state.publicHouses[i]) {
+                            ctx.fillStyle = '#ef4444'; // Red
+                        } else {
+                            ctx.fillStyle = '#22c55e'; // Green
+                        }
+                        ctx.fillRect(x * cellSize, z * cellSize, cellSize - 0.5, cellSize - 0.5);
+                    }
+                }
+                
+                // Highlight current lot position
+                const currentLotX = Math.max(0, Math.min(63, Math.round(state.position.x / LOT_SPACING_X)));
+                const currentLotZ = Math.max(0, Math.min(63, Math.round(state.position.z / LOT_SPACING_Z)));
+                ctx.strokeStyle = '#a3e635'; // Bright lime green
+                ctx.lineWidth = 2.5;
+                ctx.strokeRect(currentLotX * cellSize - 1, currentLotZ * cellSize - 1, cellSize + 2, cellSize + 2);
+
+                canvas.onclick = (e) => {
+                    const rect = canvas.getBoundingClientRect();
+                    const scaleX = 512 / rect.width;
+                    const scaleY = 512 / rect.height;
+                    const px = (e.clientX - rect.left) * scaleX;
+                    const py = (e.clientY - rect.top) * scaleY;
+                    const targetX = Math.floor(px / cellSize);
+                    const targetZ = Math.floor(py / cellSize);
+                    const idx = targetZ * 64 + targetX;
+                    window.teleportToLot(idx);
+                    window.closeModal('teleport-modal');
+                };
+            }
+        }
+
+        window.buyAdditionalHouse = async (slotNum, lotIndex, cost) => {
+            if (state.ownedHouses.length >= 4) {
+                showToast('4-House Limit Reached', 'Town zoning laws allow a maximum of 4 houses per scientist.', 'warn');
+                return;
+            }
+            if (slotNum === 4 && state.ownedHouses.length < 3) {
+                showToast('Purchase House #3 First', 'Unlock House Slot #3 before expanding to Slot #4.', 'warn');
+                return;
+            }
+            if (state.credits < cost) {
+                showToast('Insufficient Credits', `You need ${cost.toLocaleString()} Cr. Fabricate and sell items to the Mailbox AI Trader!`, 'warn');
+                return;
+            }
+
+            state.credits -= cost;
+            const newHouse = {
+                lotIndex,
+                type: slotNum === 3 ? 'MACHINE_LAB' : 'MATERIAL_VAULT',
+                title: `House #${slotNum}: ${slotNum === 3 ? 'Advanced Machine Lab' : 'Quantum Material Annex'}`
+            };
+            state.ownedHouses.push(newHouse);
+
+            updateHudCounters();
+            renderTeleportModal();
+            updateTownColors();
+            await saveHouseClaimToCloud(newHouse);
+            showToast(`Purchased House #${slotNum}!`, `You now own ${state.ownedHouses.length}/4 houses! Teleported to Lot #${lotIndex}.`, 'success');
+            window.teleportToLot(lotIndex);
+        };
+
+        window.teleportToLot = (lotIndex) => {
+            const clampIdx = Math.max(0, Math.min(TOTAL_HOUSES - 1, Number(lotIndex)));
+            const targetX = (clampIdx % GRID_SIZE) * LOT_SPACING_X;
+            const targetZ = Math.floor(clampIdx / GRID_SIZE) * LOT_SPACING_Z;
+            state.position.x = targetX;
+            state.position.z = targetZ + 12; // Start slightly in front
+            
+            updateActiveInterior();
+            syncPlayerPresenceToCloud();
+            showToast('Teleported!', `Arrived at House Lot #${clampIdx}.`, 'info');
+        };
+
+        window.teleportToMyHouse = (houseIdx) => {
+            const h = state.ownedHouses[houseIdx];
+            if (h) window.teleportToLot(h.lotIndex);
+        };
+
+        window.teleportToLotInput = () => {
+            const val = Number(document.getElementById('teleport-lot-input').value || 0);
+            window.teleportToLot(val);
+            window.closeModal('teleport-modal');
+        };
+
+        // ---------------------------------------------------------------------
+        // 10. MULTIPLAYER P2P TRADE BOARD
+        // ---------------------------------------------------------------------
+        function renderTradeModal() {
+            const selectEl = document.getElementById('trade-item-select');
+            if (state.craftedInventory.length === 0) {
+                selectEl.innerHTML = `<option value="">-- Fabricate a project first --</option>`;
+            } else {
+                selectEl.innerHTML = state.craftedInventory.map(i => `<option value="${i.id}">${i.name} (~${i.scientificValueEstimate} Cr)</option>`).join('');
+            }
+
+            const listGrid = document.getElementById('trade-listings-grid');
+            const allListings = state.tradeListings.length > 0 ? state.tradeListings : [
+                { id: 'npc-trade-1', sellerId: 'Dr.Vance-88', itemName: 'Single-Crystal Tungsten Diverter Tile', composition: '90% W, 10% SiC', specs: 'σ_y: 1,420 MPa | ±1.2 μm', price: 1150, rawItem: { id: 'bought-1', name: 'Single-Crystal Tungsten Diverter Tile', archetype: 'Tokamak Diverter Plate', composition: '90% Refractory Tungsten, 10% Silicon Carbide', massKg: 6.5, density: 16.8, modulusGPa: 410, yieldMPa: 1420, meltingC: 3250, thermalW: 165, toleranceUm: 1.2, stages: ['Arc Smelting', '5-Axis CNC'], scientificValueEstimate: 1480 } },
+                { id: 'npc-trade-2', sellerId: 'LabTech-Nova', itemName: 'CVD Graphene Supercapacitor Core', composition: '80% C-Gr, 20% Li', specs: 'E: 760 GPa | ±0.8 μm', price: 1680, rawItem: { id: 'bought-2', name: 'CVD Graphene Supercapacitor Core', archetype: 'Solid-State Supercapacitor', composition: '80% CVD Graphene, 20% Battery-Grade Lithium', massKg: 1.8, density: 1.92, modulusGPa: 760, yieldMPa: 1950, meltingC: 2950, thermalW: 1450, toleranceUm: 0.8, stages: ['Planetary Ball Mill', 'Laser SLS'], scientificValueEstimate: 2100 } }
+            ];
+
+            listGrid.innerHTML = allListings.map(tr => `
+                <div class="bg-slate-900/90 border border-slate-800 rounded-xl p-3.5 flex flex-col justify-between gap-2.5">
+                    <div>
+                        <div class="flex items-center justify-between">
+                            <span class="font-bold text-xs text-white">${tr.itemName}</span>
+                            <span class="font-mono text-xs font-bold text-amber-300">${tr.price} Cr</span>
+                        </div>
+                        <div class="text-[11px] text-slate-400 mt-0.5">${tr.composition}</div>
+                        <div class="text-[10px] font-mono text-purple-300 mt-1">${tr.specs} • Seller: ${tr.sellerId}</div>
+                    </div>
+                    <button onclick="window.purchaseTradeListing('${tr.id}')" class="bg-purple-600/30 hover:bg-purple-600 border border-purple-500/40 text-purple-200 hover:text-white text-xs font-semibold py-1.5 rounded-lg transition">
+                        Buy Component (${tr.price} Cr)
+                    </button>
+                </div>
+            `).join('');
+        }
+
+        window.postItemToTradeBoard = async () => {
+            const itemId = document.getElementById('trade-item-select').value;
+            const price = Math.max(10, Number(document.getElementById('trade-price-input').value || 500));
+            const idx = state.craftedInventory.findIndex(i => i.id === itemId);
+            if (idx < 0) {
+                showToast('No Project Selected', 'Fabricate an item in your Machine Lab first.', 'warn');
+                return;
+            }
+            const item = state.craftedInventory[idx];
+            state.craftedInventory.splice(idx, 1);
+
+            const listingObj = {
+                sellerId: state.userId,
+                itemName: item.name,
+                composition: item.composition,
+                specs: `σ_y: ${item.yieldMPa}MPa | ±${item.toleranceUm}μm`,
+                price,
+                rawItem: JSON.stringify(item),
+                createdAt: Date.now()
+            };
+
+            if (db && currentUser) {
+                try {
+                    const colRef = collection(db, 'artifacts', appId, 'public', 'data', 'trades');
+                    await addDoc(colRef, listingObj);
+                } catch (e) {}
+            } else {
+                state.tradeListings.unshift({ id: 'local-' + Date.now(), ...listingObj, rawItem: item });
+            }
+
+            updateHudCounters();
+            renderTradeModal();
+            showToast('Listed on Global P2P Market', `"${item.name}" is now available for other scientists to purchase for ${price} Cr.`, 'success');
+        };
+
+        window.purchaseTradeListing = async (listingId) => {
+            const allListings = state.tradeListings.length > 0 ? state.tradeListings : [
+                { id: 'npc-trade-1', sellerId: 'Dr.Vance-88', itemName: 'Single-Crystal Tungsten Diverter Tile', price: 1150, rawItem: { id: 'bought-1', name: 'Single-Crystal Tungsten Diverter Tile', archetype: 'Tokamak Diverter Plate', composition: '90% Refractory Tungsten, 10% Silicon Carbide', massKg: 6.5, density: 16.8, modulusGPa: 410, yieldMPa: 1420, meltingC: 3250, thermalW: 165, toleranceUm: 1.2, stages: ['Arc Smelting', '5-Axis CNC'], scientificValueEstimate: 1480 } },
+                { id: 'npc-trade-2', sellerId: 'LabTech-Nova', itemName: 'CVD Graphene Supercapacitor Core', price: 1680, rawItem: { id: 'bought-2', name: 'CVD Graphene Supercapacitor Core', archetype: 'Solid-State Supercapacitor', composition: '80% CVD Graphene, 20% Battery-Grade Lithium', massKg: 1.8, density: 1.92, modulusGPa: 760, yieldMPa: 1950, meltingC: 2950, thermalW: 1450, toleranceUm: 0.8, stages: ['Planetary Ball Mill', 'Laser SLS'], scientificValueEstimate: 2100 } }
+            ];
+            const found = allListings.find(l => l.id === listingId);
+            if (!found) return;
+
+            if (state.credits < found.price) {
+                showToast('Insufficient Credits', `You need ${found.price} Cr to buy this engineered item.`, 'warn');
+                return;
+            }
+
+            state.credits -= found.price;
+            const parsedItem = typeof found.rawItem === 'string' ? JSON.parse(found.rawItem) : found.rawItem;
+            parsedItem.id = 'proj-bought-' + Date.now();
+            state.craftedInventory.unshift(parsedItem);
+
+            if (db && currentUser && !listingId.startsWith('npc-')) {
+                try {
+                    await deleteDoc(doc(db, 'artifacts', appId, 'public', 'data', 'trades', listingId));
+                } catch (e) {}
+            }
+
+            updateHudCounters();
+            renderTradeModal();
+            showToast('Purchased Component!', `Added "${parsedItem.name}" to your inventory! You can inspect it or flip it to the Mailbox AI Appraiser.`, 'success');
+        };
+
+        // ---------------------------------------------------------------------
+        // 11. MODAL MANAGER & PROXIMITY INTERACTION SYSTEM
+        // ---------------------------------------------------------------------
+        window.openModal = (id) => {
+            if (id === 'voxel-modal') renderVoxelEditorUI();
+            if (id === 'appraiser-modal') renderAppraiserModal();
+            if (id === 'teleport-modal') renderTeleportModal();
+            if (id === 'trade-modal') renderTradeModal();
+
+            const el = document.getElementById(id);
+            if (el) el.classList.remove('hidden');
+        };
+
+        window.closeModal = (id) => {
+            const el = document.getElementById(id);
+            if (el) el.classList.add('hidden');
+        };
+
+        // Universal close for all active modals
+        window.closeAllModals = () => {
+            const modalIds = [
+                'mailbox-modal',
+                'machine-modal',
+                'appraiser-modal',
+                'voxel-modal',
+                'teleport-modal',
+                'trade-modal'
+            ];
+            let closedAny = false;
+            modalIds.forEach(id => {
+                const el = document.getElementById(id);
+                if (el && !el.classList.contains('hidden')) {
+                    el.classList.add('hidden');
+                    closedAny = true;
+                }
+            });
+            return closedAny;
+        };
+
+        window.loadMailboxMessages = (lotIndex) => {
+            state.currentMailboxLot = lotIndex;
+            const listEl = document.getElementById('mailbox-messages-list');
+            const msgs = state.mailboxMessages[lotIndex] || [];
+            
+            if(msgs.length === 0) {
+                listEl.innerHTML = `<div class="text-sm text-slate-400 italic bg-slate-950 p-4 rounded-xl text-center border border-slate-800">No public messages here yet. Be the first to leave a note for the owner or visitors!</div>`;
+            } else {
+                listEl.innerHTML = msgs.map(m => `
+                    <div class="bg-slate-900/80 border border-slate-800 p-3 rounded-xl shadow-sm">
+                        <div class="flex items-center justify-between text-[11px] font-mono mb-1.5">
+                            <span class="text-blue-400 font-bold"><i class="fa-solid fa-user-astronaut mr-1"></i> ${m.author}</span>
+                            <span class="text-slate-500">${new Date(m.time).toLocaleTimeString()}</span>
+                        </div>
+                        <div class="text-sm text-slate-200">${m.text}</div>
+                    </div>
+                `).join('');
+            }
+        };
+
+        window.postMailboxMessage = () => {
+            const input = document.getElementById('mailbox-input');
+            const text = input.value.trim();
+            if(!text) return;
+            const lotIndex = state.currentMailboxLot;
+            
+            if(!state.mailboxMessages[lotIndex]) state.mailboxMessages[lotIndex] = [];
+            state.mailboxMessages[lotIndex].push({ author: state.userId, text, time: Date.now() });
+            
+            input.value = '';
+            window.loadMailboxMessages(lotIndex);
+            showToast('Mailbox Updated', 'Your public message has been securely deposited.', 'success');
+        };
+
+    let activeProximityAction = null;
+    const raycaster = new THREE.Raycaster();
+    const screenCenter = new THREE.Vector2(0, 0);
+    
+    // Performance Optimization: Cache DOM updates and throttle raycasting
+    let lastCoordsString = '';
+    let lastLotTitle = '';
+    let raycastTimer = 0;
+
+    function checkProximityInteractions(dt) {
+        const currentLotX = Math.round(state.position.x / LOT_SPACING_X);
+        const currentLotZ = Math.round(state.position.z / LOT_SPACING_Z);
+        const currentLot = currentLotZ * GRID_SIZE + currentLotX;
+        const lotCenterX = currentLotX * LOT_SPACING_X;
+        const lotCenterZ = currentLotZ * LOT_SPACING_Z;
+        const desc = getLotDescriptor(currentLot);
+
+        // OPTIMIZATION: Prevent DOM layout thrashing by caching text updates
+        if (lastLotTitle !== desc.title) {
+            document.getElementById('hud-location-title').textContent = desc.title;
+            lastLotTitle = desc.title;
+        }
+        const coordsStr = `X: ${Math.round(state.position.x)}m, Z: ${Math.round(state.position.z)}m`;
+        if (lastCoordsString !== coordsStr) {
+            document.getElementById('hud-coords').textContent = coordsStr;
+            lastCoordsString = coordsStr;
+        }
+
+        // OPTIMIZATION: Throttle expensive Raycasting to 10 FPS
+        raycastTimer += dt;
+        if (raycastTimer < 0.1) return;
+        raycastTimer = 0;
+
+        // Reset highlights
+        interactableMeshes.forEach(m => {
+            if (m.userData.isJar) {
+                m.userData.visualMesh.material.emissiveIntensity = 0.2;
+            } else if (m.material && m.material.emissive) {
+                m.material.emissiveIntensity = 0.5;
+            }
+        });
+
+        const promptContainer = document.getElementById('interaction-prompt');
+        const promptLabel = document.getElementById('interaction-label');
+        const crosshairTarget = document.getElementById('crosshair-target-name');
+        
+        promptContainer.classList.add('hidden');
+        crosshairTarget.classList.add('hidden');
+        activeProximityAction = null;
+
+        // Inside Elevator Detection
+        const currentLocalX = state.position.x - lotCenterX;
+        const currentLocalZ = state.position.z - lotCenterZ;
+        const inElevatorCabin = Math.abs(currentLocalX) < 3.2 && (currentLocalZ < -14.0 && currentLocalZ > -19.0);
+
+        if (inElevatorCabin) {
+            crosshairTarget.classList.remove('hidden');
+            const currentFloorNum = Math.round(state.position.y / 12) + 1;
+            crosshairTarget.innerHTML = `Elevator Cabin • <span class="text-sky-300">Floor ${currentFloorNum}/3</span>`;
+            promptContainer.classList.remove('hidden');
+            promptLabel.innerHTML = `<span class="bg-sky-500 text-slate-950 font-mono font-bold px-2 py-0.5 rounded text-xs">▲ / ▼ ARROW KEYS</span> <span class="text-sky-300">Ride Elevator Up or Down</span>`;
+        }
+
+        // Mailbox Check
+        const dxMail = state.position.x - (lotCenterX + 12);
+        const dzMail = state.position.z - (lotCenterZ + 22);
+        if (state.position.y < 5 && Math.hypot(dxMail, dzMail) < 6.0) { // Only on ground floor
+            promptContainer.classList.remove('hidden');
+            promptLabel.innerHTML = `<i class="fa-solid fa-envelope-open-text text-blue-400 mr-1"></i> Open Mailbox & Appraiser (Press E)`;
+            activeProximityAction = () => {
+                document.getElementById('mailbox-lot-title').textContent = `Lot #${currentLot}`;
+                window.loadMailboxMessages(currentLot);
+                window.openModal('mailbox-modal');
+                if (document.pointerLockElement) document.exitPointerLock();
+            };
+            return;
+        }
+
+        // Raycast for Physical Items (Jars, Machines, Elevators)
+        raycaster.setFromCamera(screenCenter, camera);
+        const intersects = raycaster.intersectObjects(interactableMeshes, false);
+        
+        if (intersects.length > 0) {
+            const hit = intersects[0].object;
+            const dist = hit.position.clone().applyMatrix4(activeInteriorGroup.matrixWorld).distanceTo(camera.position);
+            
+            if (dist < 16.0) { // Increased comfortable interaction range
+                
+                if (hit.userData.isJar) {
+                    if (hit.userData.visualMesh && hit.userData.visualMesh.material) {
+                        hit.userData.visualMesh.material.emissiveIntensity = 1.0;
+                    }
+                    crosshairTarget.classList.remove('hidden');
+                    crosshairTarget.innerHTML = `Looking at: <span class="text-cyan-300">${hit.userData.material.name} [Jar ${hit.userData.jarIndex + 1}/3]</span>`;
+                    promptContainer.classList.remove('hidden');
+                    promptLabel.innerHTML = `<i class="fa-solid fa-hand text-cyan-400 mr-1"></i> Press <strong>E</strong> or Click to Take Sample`;
+                    
+                    activeProximityAction = () => {
+                        state.heldItem = hit.userData.material;
+                        document.getElementById('hud-held-item').textContent = `${state.heldItem.name} (${state.heldItem.symbol})`;
+                        showToast('Sample Collected!', `Now holding ${state.heldItem.name} (${state.heldItem.symbol}). Carry it to House #1 to process it in any machine.`, 'success');
+                        
+                        // Brief pickup flash animation
+                        if (hit.parent) {
+                            hit.parent.position.y += 0.3;
+                            setTimeout(() => {
+                                if (hit.parent) hit.parent.position.y -= 0.3;
+                            }, 350);
+                        }
+                    };
+                } else if (hit.userData.isElevatorDoor) {
+                    crosshairTarget.classList.remove('hidden');
+                    crosshairTarget.innerHTML = `Looking at: <span class="text-sky-300">Floor ${hit.userData.floor + 1} Elevator Entrance</span>`;
+                    promptContainer.classList.remove('hidden');
+                    promptLabel.innerHTML = `<i class="fa-solid fa-elevator text-sky-400 mr-1"></i> Step Inside Elevator`;
+                    
+                    activeProximityAction = () => {
+                        state.position.x = lotCenterX;
+                        state.position.z = lotCenterZ - 16.5;
+                        state.position.y = hit.userData.floor * 12 + 1.6;
+                        state.targetElevatorY = hit.userData.floor * 12 + 1.6;
+                        showToast('Elevator Boarded', `Use UP / DOWN Arrow Keys inside the cabin to travel floors!`, 'info');
+                    };
+                } else if (hit.userData.isMachine) {
+                    crosshairTarget.innerHTML = `Looking at: <span class="text-indigo-300">${hit.userData.type}</span>`;
+                    promptContainer.classList.remove('hidden');
+                    promptLabel.innerHTML = state.heldItem 
+                        ? `<i class="fa-solid fa-gears text-indigo-400 mr-1"></i> Open Menu (${hit.userData.type})`
+                        : `<i class="fa-solid fa-hand-holding text-rose-400 mr-1"></i> Requires Material (Empty Hand)`;
+                    
+                    if (state.heldItem) {
+                        activeProximityAction = () => {
+                            state.activeMachine = hit.userData.machineKey;
+                            window.openMachineMenu(hit.userData.type);
+                        };
+                    }
+                }
+            }
+        }
+    }
+
+    window.triggerNearbyInteraction = () => {
+        if (activeProximityAction) {
+            activeProximityAction();
+        }
+    };
+
+    window.openMachineMenu = (machineName) => {
+        if (!state.heldItem) {
+            showToast('No Material', 'You must be holding a material to use the machines! Visit House #2.', 'warn');
+            return;
+        }
+        
+        state.selectedFeedstock = [{ ...state.heldItem, weightPct: 100 }];
+        const metrics = computeScientificMetrics();
+        
+        document.getElementById('machine-modal-title').textContent = machineName + ' System Interface';
+        document.getElementById('machine-modal-formulas').innerHTML = metrics.equationsHtml || '<div class="text-emerald-400 font-bold">Process parameters optimal. Standby for fabrication.</div>';
+        
+        window.openModal('machine-modal');
+        if (document.pointerLockElement) document.exitPointerLock();
+    };
+
+    window.runMachineProcess = () => {
+        const item = state.heldItem;
+        if (!item) return;
+        
+        state.selectedFeedstock = [{ ...item, weightPct: 100 }];
+        const metrics = computeScientificMetrics();
+        
+        state.heldItem = null;
+        document.getElementById('hud-held-item').textContent = `Empty Hand`;
+        
+        const crafted = {
+            id: 'proj-phys-' + Date.now(),
+            name: `Refined ${item.symbol} Component`,
+            archetype: 'Physical Processed Part',
+            composition: `100% ${item.name}`,
+            massKg: 5.0,
+            density: item.density,
+            modulusGPa: Number((metrics.modulusGPa || item.modulusGPa * 1.2).toFixed(1)),
+            yieldMPa: Number((metrics.yieldMPa || item.yieldMPa * 1.5).toFixed(1)),
+            meltingC: item.meltC,
+            thermalW: item.thermalW,
+            toleranceUm: Number((metrics.precisionUm || 2.5).toFixed(2)),
+            stages: [`Processed in ${state.activeMachine}`],
+            scientificValueEstimate: metrics.valueScore || Math.round(item.baseCost * 5 * 1.5)
+        };
+        state.craftedInventory.unshift(crafted);
+        updateHudCounters();
+        
+        window.closeModal('machine-modal');
+        showToast('Fabrication Complete!', `Successfully machined ${item.name} into a component. Take it to the Mailbox!`, 'success');
+    };
+
+    // ---------------------------------------------------------------------
+    // 12. KEYBOARD, TOUCH & ORBIT CAMERA CONTROLS
+    // ---------------------------------------------------------------------
+        // 12. KEYBOARD, TOUCH & ORBIT CAMERA CONTROLS
+        // ---------------------------------------------------------------------
+        // 12. KEYBOARD, TOUCH & ORBIT CAMERA CONTROLS
+        // ---------------------------------------------------------------------
+        const keys = { w: false, a: false, s: false, d: false };
+        let cameraYaw = 0;
+        let cameraPitch = 0;
+        let isPointerLocked = false;
+        let isDraggingOrbit = false;
+        let prevMouse = { x: 0, y: 0 };
+        let cameraDist = 8;
+        
+        state.targetElevatorY = 1.6;
+        state.elevatorFloor = 0;
+
+        const blocker = document.getElementById('blocker');
+
+        blocker.addEventListener('click', () => {
+            try {
+                const p = document.body.requestPointerLock();
+                if (p && typeof p.catch === 'function') {
+                    p.catch(err => console.warn('Pointer lock cooldown:', err));
+                }
+            } catch (err) {
+                console.warn('Pointer lock rejected:', err);
+            }
+        });
+
+        document.addEventListener('pointerlockchange', () => {
+            isPointerLocked = document.pointerLockElement === document.body;
+            blocker.style.opacity = isPointerLocked ? '0' : '1';
+            setTimeout(() => {
+                blocker.style.display = isPointerLocked ? 'none' : 'flex';
+            }, isPointerLocked ? 200 : 0);
+        });
+
+        window.addEventListener('keydown', (e) => {
+            const isTyping = ['INPUT', 'TEXTAREA'].includes(document.activeElement?.tagName);
+            const k = e.key.toLowerCase();
+
+            // Universal modal close when 'E' or 'Escape' is pressed
+            if (k === 'e' || e.key === 'Escape') {
+                if (!isTyping || e.key === 'Escape') {
+                    const closed = window.closeAllModals();
+                    if (closed) {
+                        e.preventDefault();
+                        return;
+                    }
+                }
+            }
+
+            if (isTyping) return;
+            
+            // Standard WASD
+            if (k === 'w') keys.w = true;
+            if (k === 's') keys.s = true;
+            if (k === 'a') keys.a = true;
+            if (k === 'd') keys.d = true;
+
+            // Elevator Dedicated Up / Down Arrow Key Controls
+            const lotX = Math.round(state.position.x / LOT_SPACING_X);
+            const lotZ = Math.round(state.position.z / LOT_SPACING_Z);
+            const lotCenterX = lotX * LOT_SPACING_X;
+            const lotCenterZ = lotZ * LOT_SPACING_Z;
+            const inCabin = Math.abs(state.position.x - lotCenterX) < 3.2 && 
+                            (state.position.z - lotCenterZ < -14.0 && state.position.z - lotCenterZ > -19.0);
+
+            if (inCabin) {
+                if (e.key === 'ArrowUp') {
+                    e.preventDefault();
+                    if (state.elevatorFloor < 2) {
+                        state.elevatorFloor++;
+                        state.targetElevatorY = state.elevatorFloor * 12 + 1.6;
+                        showToast('Elevator Ascending', `Moving up to Floor ${state.elevatorFloor + 1}...`, 'info');
+                    }
+                } else if (e.key === 'ArrowDown') {
+                    e.preventDefault();
+                    if (state.elevatorFloor > 0) {
+                        state.elevatorFloor--;
+                        state.targetElevatorY = state.elevatorFloor * 12 + 1.6;
+                        showToast('Elevator Descending', `Moving down to Floor ${state.elevatorFloor + 1}...`, 'info');
+                    }
+                }
+            }
+        });
+
+        // Left-click anywhere in 3D to pick up or interact immediately
+        canvas.addEventListener('click', () => {
+            if (activeProximityAction) {
+                window.triggerNearbyInteraction();
+            }
+        });
+
+        window.addEventListener('keyup', (e) => {
+            const k = e.key.toLowerCase();
+            if (k === 'w' || e.key === 'ArrowUp') keys.w = false;
+            if (k === 's' || e.key === 'ArrowDown') keys.s = false;
+            if (k === 'a' || e.key === 'ArrowLeft') keys.a = false;
+            if (k === 'd' || e.key === 'ArrowRight') keys.d = false;
+        });
+
+        // Mouse FPS Look
+    document.addEventListener('mousemove', (e) => {
+        if (!isPointerLocked) return;
+        const movementX = e.movementX || e.mozMovementX || e.webkitMovementX || 0;
+        const movementY = e.movementY || e.mozMovementY || e.webkitMovementY || 0;
+
+        // Fixed Standard FPS Controls (Mouse Right = Look Right)
+        cameraYaw -= movementX * 0.0025; 
+        cameraPitch -= movementY * 0.0025;
+        // Constrain pitch
+        cameraPitch = Math.max(-Math.PI/2 + 0.1, Math.min(Math.PI/2 - 0.1, cameraPitch));
+    });
+
+    // Mobile Touch D-Pad Bindings
+        function bindHoldButton(btnId, keyProp) {
+            const btn = document.getElementById(btnId);
+            if (!btn) return;
+            const start = (e) => { e.preventDefault(); keys[keyProp] = true; };
+            const end = (e) => { e.preventDefault(); keys[keyProp] = false; };
+            btn.addEventListener('mousedown', start);
+            btn.addEventListener('mouseup', end);
+            btn.addEventListener('mouseleave', end);
+            btn.addEventListener('touchstart', start, { passive: false });
+            btn.addEventListener('touchend', end, { passive: false });
+        }
+        bindHoldButton('btn-up', 'w');
+        bindHoldButton('btn-down', 's');
+        bindHoldButton('btn-left', 'a');
+        bindHoldButton('btn-right', 'd');
+
+        // Mouse & Touch Camera Orbit
+        canvas.addEventListener('mousedown', (e) => {
+            isDraggingOrbit = true;
+            prevMouse = { x: e.clientX, y: e.clientY };
+        });
+        window.addEventListener('mouseup', () => { isDraggingOrbit = false; });
+        window.addEventListener('mousemove', (e) => {
+            if (!isDraggingOrbit) return;
+            const dx = e.clientX - prevMouse.x;
+            const dy = e.clientY - prevMouse.y;
+            prevMouse = { x: e.clientX, y: e.clientY };
+            // Standard Orbit Pan
+            cameraYaw += dx * 0.006;
+            cameraPitch = Math.max(0.15, Math.min(1.25, cameraPitch + dy * 0.005));
+        });
+
+        canvas.addEventListener('wheel', (e) => {
+            cameraDist = Math.max(8, Math.min(42, cameraDist + e.deltaY * 0.015));
+        }, { passive: true });
+
+        window.addEventListener('resize', () => {
+            camera.aspect = window.innerWidth / window.innerHeight;
+            camera.updateProjectionMatrix();
+            renderer.setSize(window.innerWidth, window.innerHeight);
+        });
+
+        // ---------------------------------------------------------------------
+        // 13. FIREBASE MULTIPLAYER PRESENCE, HOUSES & P2P SYNC
+        // ---------------------------------------------------------------------
+        const appId = typeof __app_id !== 'undefined' ? __app_id : 'scitown-3d-sim';
+        let app = null, db = null, auth = null, currentUser = null;
+        const otherPlayerMeshes = new Map();
+
+        async function initFirebaseMultiplayer() {
+            try {
+                if (typeof __firebase_config === 'undefined' || !__firebase_config) {
+                    document.getElementById('hud-userid').textContent = state.userId;
+                    return;
+                }
+                const firebaseConfig = JSON.parse(__firebase_config);
+                app = initializeApp(firebaseConfig);
+                db = getFirestore(app);
+                auth = getAuth(app);
+
+                // RULE 3: Authenticate FIRST before any Firestore queries
+                if (typeof __initial_auth_token !== 'undefined' && __initial_auth_token) {
+                    await signInWithCustomToken(auth, __initial_auth_token);
+                } else {
+                    await signInAnonymously(auth);
+                }
+
+                currentUser = auth.currentUser;
+                if (!currentUser) return;
+
+                state.userId = currentUser.uid;
+                const uidDisplay = document.getElementById('hud-userid');
+                uidDisplay.textContent = state.userId;
+                uidDisplay.title = state.userId;
+
+                // Claim player's initial 2 houses in Firestore
+                for (const h of state.ownedHouses) {
+                    await saveHouseClaimToCloud(h);
+                }
+                await syncPlayerPresenceToCloud();
+
+                // Listen to Online Players (RULE 1 & RULE 2 compliant)
+                const playersCol = collection(db, 'artifacts', appId, 'public', 'data', 'players');
+                onSnapshot(playersCol, (snap) => {
+                    let count = 1;
+                    const seenIds = new Set();
+                    snap.forEach(docSnap => {
+                        const data = docSnap.data();
+                        if (!data || docSnap.id === state.userId) return;
+                        // Active within last 5 minutes
+                        if (Date.now() - (data.updatedAt || 0) < 300000) {
+                            count++;
+                            seenIds.add(docSnap.id);
+                            updateOrSpawnOtherPlayer(docSnap.id, data);
+                        }
+                    });
+                    // Cleanup disconnected meshes
+                    for (const [pid, mesh] of otherPlayerMeshes.entries()) {
+                        if (!seenIds.has(pid)) {
+                            scene.remove(mesh);
+                            otherPlayerMeshes.delete(pid);
+                        }
+                    }
+                    document.getElementById('hud-online-count').textContent = count;
+                }, (err) => console.warn('Players sync error:', err));
+
+                // Listen to Public Houses Registry
+                const housesCol = collection(db, 'artifacts', appId, 'public', 'data', 'houses');
+                onSnapshot(housesCol, (snap) => {
+                    snap.forEach(docSnap => {
+                        const d = docSnap.data();
+                        if (d && typeof d.lotIndex === 'number') {
+                            state.publicHouses[d.lotIndex] = d;
+                        }
+                    });
+                    updateTownColors();
+                }, (err) => console.warn('Houses sync error:', err));
+
+                // Listen to Global P2P Trade Board
+                const tradesCol = collection(db, 'artifacts', appId, 'public', 'data', 'trades');
+                onSnapshot(tradesCol, (snap) => {
+                    const list = [];
+                    snap.forEach(docSnap => {
+                        list.push({ id: docSnap.id, ...docSnap.data() });
+                    });
+                    state.tradeListings = list;
+                }, (err) => console.warn('Trades sync error:', err));
+
+            } catch (e) {
+                document.getElementById('hud-userid').textContent = state.userId;
+            }
+        }
+
+        async function syncPlayerPresenceToCloud() {
+            if (!db || !currentUser) return;
+            try {
+                const playerRef = doc(db, 'artifacts', appId, 'public', 'data', 'players', state.userId);
+                await setDoc(playerRef, {
+                    userId: state.userId,
+                    x: Math.round(state.position.x * 10) / 10,
+                    z: Math.round(state.position.z * 10) / 10,
+                    credits: state.credits,
+                    voxelGrid: JSON.stringify(state.voxelGrid),
+                    updatedAt: Date.now()
+                }, { merge: true });
+            } catch (e) {}
+        }
+
+        async function saveHouseClaimToCloud(houseObj) {
+            if (!db || !currentUser) return;
+            try {
+                const houseRef = doc(db, 'artifacts', appId, 'public', 'data', 'houses', `lot_${houseObj.lotIndex}`);
+                await setDoc(houseRef, {
+                    lotIndex: houseObj.lotIndex,
+                    ownerId: state.userId,
+                    type: houseObj.type,
+                    title: houseObj.title,
+                    updatedAt: Date.now()
+                }, { merge: true });
+            } catch (e) {}
+        }
+
+        function updateOrSpawnOtherPlayer(pid, data) {
+            let mesh = otherPlayerMeshes.get(pid);
+            let gridArr = null;
+            try { gridArr = JSON.parse(data.voxelGrid); } catch (e) {}
+            if (!mesh) {
+                const geo = new THREE.BoxGeometry(1.75, 1.75, 1.75);
+                const mat = new THREE.MeshStandardMaterial({
+                    map: createTextureFrom7x7Grid(gridArr || getPresetGrid('quantum')),
+                    roughness: 0.4
+                });
+                mesh = new THREE.Mesh(geo, mat);
+                mesh.castShadow = true;
+                scene.add(mesh);
+                otherPlayerMeshes.set(pid, mesh);
+            }
+            mesh.position.set(Number(data.x || 0), 0.9, Number(data.z || 10));
+        }
+
+        // ---------------------------------------------------------------------
+        // 14. MAIN ANIMATION & PHYSICS LOOP
+        // ---------------------------------------------------------------------
+        let lastSyncTime = 0;
+        const clock = new THREE.Clock();
+
+        function animate() {
+        requestAnimationFrame(animate);
+        const dt = Math.min(clock.getDelta(), 0.1);
+        const elapsed = clock.getElapsedTime();
+
+        // 1. Smooth Vertical Elevator Interpolation
+        if (Math.abs(state.position.y - state.targetElevatorY) > 0.02) {
+            state.position.y += (state.targetElevatorY - state.position.y) * 4.0 * dt;
+            const cabinMesh = activeInteriorGroup.getObjectByName("elevatorCabin");
+            if (cabinMesh) {
+                cabinMesh.position.y = state.position.y - 1.5;
+            }
+        } else {
+            state.position.y = state.targetElevatorY;
+        }
+
+        // 2. Move First-Person Player (Standard FPS mapping)
+        const moveSpeed = 24.0; // Increased for bigger houses
+        let moveX = 0, moveZ = 0;
+        
+        // Fixed standard WASD mapping relative to camera
+        if (keys.w) moveZ += 1;  // Forward
+        if (keys.s) moveZ -= 1;  // Backward
+        if (keys.a) moveX += 1;  // Left (Fixed inverted A/D)
+        if (keys.d) moveX -= 1;  // Right (Fixed inverted A/D)
+
+        if (moveX !== 0 || moveZ !== 0) {
+            const len = Math.hypot(moveX, moveZ);
+            moveX /= len;
+            moveZ /= len;
+
+            // Correct FPS relative movement geometry
+            const forwardX = Math.sin(cameraYaw);
+            const forwardZ = Math.cos(cameraYaw);
+            const rightX = Math.cos(cameraYaw);
+            const rightZ = -Math.sin(cameraYaw);
+
+            const worldDx = (moveX * rightX + moveZ * forwardX) * moveSpeed * dt;
+            const worldDz = (moveX * rightZ + moveZ * forwardZ) * moveSpeed * dt;
+
+            let nextX = state.position.x + worldDx;
+            let nextZ = state.position.z + worldDz;
+
+            // Simple Wall Collision Physics
+            const currentLotX = Math.round(state.position.x / LOT_SPACING_X);
+            const currentLotZ = Math.round(state.position.z / LOT_SPACING_Z);
+            const lotCenterX = currentLotX * LOT_SPACING_X;
+            const lotCenterZ = currentLotZ * LOT_SPACING_Z;
+            
+            const localX = nextX - lotCenterX;
+            const localZ = nextZ - lotCenterZ;
+
+            const roomSize = 19.5; // Wall boundaries (40x40 room)
+            const doorWidth = 3.0; // Open gap width for the door
+
+            // Determine if player is inside the current building bounds
+            if (Math.abs(state.position.x - lotCenterX) < 20 && Math.abs(state.position.z - lotCenterZ) < 20) {
+                // Inside: Prevent walking through walls outward
+            if (localX < -roomSize) nextX = lotCenterX - roomSize;
+            if (localX > roomSize) nextX = lotCenterX + roomSize;
+            
+            if (localZ < -roomSize) nextZ = lotCenterZ - roomSize;
+            if (localZ > roomSize) {
+                // Check if passing through the front door (Z > roomSize, X between -doorWidth and +doorWidth)
+                // Only ground floor has an exterior exit door
+                if (Math.abs(localX) > doorWidth || state.position.y > 4.0) {
+                    nextZ = lotCenterZ + roomSize;
+                }
+            }
+
+            // --- Interior Obstacle Collision (Shelves & Machines) ---
+            const obstacles = activeInteriorGroup.userData.obstacles || [];
+            const pRadius = 1.0; // Player physical collision radius
+            let colX = false, colZ = false;
+
+            for (const obs of obstacles) {
+                // Test moving in X independently to allow sliding against shelves
+                const testX = nextX - lotCenterX;
+                const currZ = state.position.z - lotCenterZ;
+                if (testX + pRadius > obs.minX && testX - pRadius < obs.maxX &&
+                    currZ + pRadius > obs.minZ && currZ - pRadius < obs.maxZ) {
+                    colX = true;
+                }
+                
+                // Test moving in Z independently
+                const currX = state.position.x - lotCenterX;
+                const testZ = nextZ - lotCenterZ;
+                if (currX + pRadius > obs.minX && currX - pRadius < obs.maxX &&
+                    testZ + pRadius > obs.minZ && testZ - pRadius < obs.maxZ) {
+                    colZ = true;
+                }
+            }
+
+            // Revert movement on the axis that collided
+            if (colX) nextX = state.position.x;
+            if (colZ) nextZ = state.position.z;
+            // --------------------------------------------------------
+
+        } else {
+            // Outside: Prevent walking into walls from the outside
+            if (Math.abs(localX) < 20 && Math.abs(localZ) < 20) {
+                    // Hitting the building from the outside
+                    if (Math.abs(state.position.z - lotCenterZ) >= 20) {
+                        // Colliding with Z walls (Front/Back)
+                        if (Math.abs(localX) > doorWidth || localZ < 0) {
+                            nextZ = state.position.z; // Block entry if not at door
+                        }
+                    }
+                    if (Math.abs(state.position.x - lotCenterX) >= 20) {
+                        // Colliding with X walls (Sides)
+                        nextX = state.position.x;
+                    }
+                }
+            }
+
+            // Apply calculated physics positions
+            state.position.x = Math.max(4, Math.min(GRID_SIZE * LOT_SPACING_X - 4, nextX));
+            state.position.z = Math.max(4, Math.min(GRID_SIZE * LOT_SPACING_Z - 4, nextZ));
+
+            updateActiveInterior();
+
+            if (Date.now() - lastSyncTime > 1500) {
+                lastSyncTime = Date.now();
+                syncPlayerPresenceToCloud();
+            }
+        }
+
+        // Check interactions even if standing still (looking around), but throttled
+        checkProximityInteractions(dt);
+
+        // Sync hidden local player mesh to actual pos for Multiplayer broadcasting
+        playerGroup.position.set(state.position.x, state.position.y, state.position.z);
+        playerGroup.rotation.y = cameraYaw;
+
+        // 2. Animate Machines & Mailbox AI Appraiser NPCs
+            for (const item of animatedMiniMeshes) {
+                if (item.type === 'spinY') item.mesh.rotation.y += dt * 4.5;
+                if (item.type === 'spinX') item.mesh.rotation.x += dt * 3.0;
+                if (item.type === 'scanX') {
+                    item.mesh.position.x = Math.sin(elapsed * 4) * 1.2;
+                }
+                if (item.type === 'bobY') {
+                    item.mesh.position.y = Math.sin(elapsed * 3) * 0.12;
+                    item.mesh.rotation.y = Math.sin(elapsed * 1.2) * 0.35;
+                }
+            }
+
+            // 3. Update FPS Camera Position & LookAt
+        const headY = state.position.y + 1.6 + Math.sin(elapsed * (moveX !== 0 || moveZ !== 0 ? 12 : 2.5)) * 0.05; // Head bob
+        camera.position.set(state.position.x, headY, state.position.z);
+        
+        // Correct Target computation
+        const targetX = camera.position.x + Math.sin(cameraYaw) * Math.cos(cameraPitch);
+        const targetY = camera.position.y + Math.sin(cameraPitch);
+        const targetZ = camera.position.z + Math.cos(cameraYaw) * Math.cos(cameraPitch);
+        camera.lookAt(targetX, targetY, targetZ);
+
+        // Keep directional shadow light centered near player X & Z
+            dirLight.position.set(state.position.x + 35, 80, state.position.z + 40);
+            dirLight.target.position.set(state.position.x, 0, state.position.z);
+            dirLight.target.updateMatrixWorld();
+
+            renderer.render(scene, camera);
+        }
+
+        // Start application on window load
+        window.onload = function () {
+            initInstancedTown();
+            updateActiveInterior();
+            updateHudCounters();
+            checkProximityInteractions(0.1);
+            initFirebaseMultiplayer();
+            animate();
+        };
+    </script>
+</body>
+</html>
